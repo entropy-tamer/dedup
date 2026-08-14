@@ -18,6 +18,9 @@ memchr = { git = "https://git.sly.so/kade/memchr", package = "memchr", version =
 regex = { git = "https://git.sly.so/kade/regex", package = "regex", version = "1.10" }
 once_cell = { git = "https://git.sly.so/kade/once_cell", package = "once_cell", version = "1.19" }
 
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { git = "https://git.sly.so/kade/getrandom", features = ["wasm_js"] }
+
 [dev-dependencies]
 wasm-bindgen-test = { git = "https://git.sly.so/kade/wasm-bindgen", package = "wasm-bindgen-test", version = "0.3" }
 

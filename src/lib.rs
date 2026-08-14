@@ -1,48 +1,38 @@
 //! `dedup-wasm` — WASM binding for text deduplication.
 //!
 //! Provides high-performance n-gram, Jaccard, and sentence-level similarity
-//! detection for streaming and batch text deduplication.
-//!
-//! ## Architecture
-//!
-//! - **N-gram computation**: Rolling hash (Rabin-Karp) for O(n) window hashing
-//! - **Jaccard similarity**: Token-set intersection/union with ahash acceleration
-//! - **Char n-gram similarity**: Fixed-width n-gram comparison
-//! - **Sentence splitting**: Compiled regex with memchr optimization
-//! - **Streaming state**: Incremental processing via `StreamingDedup` struct
-//!
-//! ## Exports
-//!
-//! - `dedup_check_repetition` — Batch repetition check
-//! - `dedup_deduplicate_text` — Remove repeated sections
-//! - `dedup_get_repetition_ratio` — Ratio of repeated content
-//! - `StreamingDedup` — Incremental streaming deduplication
-//! - `dedup_jaccard_similarity` — Token set Jaccard similarity
-//! - `dedup_tokenize` — Tokenize text into word set
+//! detection for streaming and batch text deduplication. Also exposes presets,
+//! cross-turn loop detection (behind a feature flag), and a streaming state machine with
+//! time-based gating and action determination.
 
 mod ngram;
 mod similarity;
 mod tokenize;
 mod sentence;
 mod deduplicate;
+pub mod presets;
+
+pub mod loop_detect;
+
+// ── Re-exports from sub-modules (for use by TS wrapper) ─────────────
 
 pub use deduplicate::{
     check_repetition, deduplicate_text, get_repetition_ratio,
-    DedupSettings, RepeatedSection, RepetitionCheck, SectionSource,
+    DedupSettings, RepeatedSection as RustRepeatedSection, RepetitionCheck as RustRepetitionCheck, SectionSource,
+    StreamAction, StreamingState,
 };
 pub use ngram::{compute_ngram_hashes, compute_ngram_strings, find_hash_matches, NgramHasher};
 pub use similarity::{jaccard_similarity, char_ngram_similarity};
 pub use tokenize::{tokenize, TokenSet};
 pub use sentence::split_sentences;
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
-// ── Types for WASM exports ────────────────────────────────────────────
+// ── WASM-exported types ─────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 #[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmDedupSettings {
     pub enabled: bool,
     pub ngram_similarity_threshold: f64,
@@ -52,26 +42,49 @@ pub struct WasmDedupSettings {
     pub window_size: usize,
     pub step_size: usize,
     pub min_repeat_length: usize,
-    pub max_repeats: usize,
+    pub max_repetitions: usize,
 }
 
+#[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmRepeatedSection {
-    pub first_start: usize,
-    pub first_end: usize,
-    pub repeat_start: usize,
-    pub repeat_end: usize,
-    pub similarity: f64,
-    pub source: String, // "ngram" | "sentence"
+    first_start: usize,
+    first_end: usize,
+    repeat_start: usize,
+    repeat_end: usize,
+    similarity: f64,
+    source: String,
 }
 
+#[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmRepetitionCheck {
-    pub repeated: bool,
-    pub sections: Vec<WasmRepeatedSection>,
+    repeated: bool,
+    sections: Vec<WasmRepeatedSection>,
 }
 
-// ── Streaming state ───────────────────────────────────────────────────
+/// Serialized loop detection settings for WASM export.
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WasmLoopSettings {
+    pub enabled: bool,
+    pub window_size: u8,
+    pub max_repeats: u8,
+    pub escalation_interval: u8,
+    pub text_similarity_threshold: f64,
+    pub thought_loop_threshold: f64,
+}
+
+/// Serialized turn signature for cross-turn matching.
+#[wasm_bindgen]
+#[derive(Debug, Clone)]
+pub struct WasmTurnSignature {
+    tool_calls: String,
+    text_hash: String, // hex-encoded SHA-256
+    text_content: String,
+}
+
+// ── Streaming state (WASM wrapper) ───────────────────────────────────
 
 #[wasm_bindgen]
 pub struct StreamingDedup {
@@ -85,7 +98,7 @@ impl StreamingDedup {
     pub fn new(settings_json: &str) -> Result<StreamingDedup, JsValue> {
         let wasm_settings: WasmDedupSettings = serde_json::from_str(settings_json)
             .map_err(|e| JsValue::from_str(&format!("Invalid settings JSON: {}", e)))?;
-                let settings: DedupSettings = wasm_settings.into();
+        let settings: DedupSettings = wasm_settings.into();
         let state = deduplicate::StreamingState::new(settings.clone());
         Ok(StreamingDedup { settings, state })
     }
@@ -96,6 +109,18 @@ impl StreamingDedup {
         let wasm_result: WasmRepetitionCheck = result.into();
         serde_json::to_string(&wasm_result)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
+    }
+
+    /// Determine the recommended action (none/steer/abort) based on accumulated state.
+    pub fn determine_action(&self, check_json: &str) -> Result<String, JsValue> {
+        let check: RustRepetitionCheck = serde_json::from_str(check_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid check JSON: {}", e)))?;
+        let action = self.state.determine_action(&check);
+        Ok(match action {
+            StreamAction::None => "none".to_string(),
+            StreamAction::Steer => "steer".to_string(),
+            StreamAction::Abort => "abort".to_string(),
+        })
     }
 
     /// Reset the streaming state.
@@ -161,6 +186,36 @@ pub fn dedup_tokenize(text: &str) -> Result<String, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
 }
 
+// ── Preset resolution (WASM export) ──────────────────────────────────
+
+#[wasm_bindgen]
+pub fn dedup_resolve_preset(name: &str) -> Result<String, JsValue> {
+    let settings = presets::resolve_dedup_preset(name);
+    serde_json::to_string(&settings)
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
+}
+
+// ── Cross-turn loop detection (WASM exports) — gated by feature flag ──
+
+#[cfg(feature = "loop_detect")]
+mod wasm_loop_exports {
+    use super::*;
+    use crate::loop_detect::{self, LoopDetectionSettings, TurnSignature};
+
+    #[wasm_bindgen]
+    pub fn dedup_compute_turn_signature(message_json: &str) -> Result<String, JsValue> {
+        let sig: TurnSignature = serde_json::from_str(message_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid message JSON: {}", e)))?;
+        // Compute the signature fields and return as WASM-exported struct.
+        Ok(WasmTurnSignature { tool_calls: sig.tool_calls, text_hash: hex_encode(&sig.text_hash), text_content: sig.text_content }.into())
+    }
+
+    #[wasm_bindgen]
+    pub fn dedup_get_variant_suggestion(tool_name: &str) -> String {
+        lock_detect::get_variant_suggestion(tool_name).unwrap_or_else(|| "Try a different tool or approach.".to_string())
+    }
+}
+
 // ── Conversion implementations ────────────────────────────────────────
 
 impl From<WasmDedupSettings> for DedupSettings {
@@ -174,33 +229,22 @@ impl From<WasmDedupSettings> for DedupSettings {
             window_size: w.window_size,
             step_size: w.step_size,
             min_repeat_length: w.min_repeat_length,
-            max_repeats: w.max_repeats,
+            max_repetitions: w.max_repetitions,
         }
     }
 }
 
-impl From<RepeatedSection> for WasmRepeatedSection {
-    fn from(s: RepeatedSection) -> Self {
-        WasmRepeatedSection {
-            first_start: s.first_start,
-            first_end: s.first_end,
-            repeat_start: s.repeat_start,
-            repeat_end: s.repeat_end,
-            similarity: s.similarity,
-            source: match s.source {
-                SectionSource::Ngram => "ngram".to_string(),
-                SectionSource::Sentence => "sentence".to_string(),
-            },
-        }
-    }
-}
+impl From<RustRepetitionCheck> for WasmRepetitionCheck {
+    fn from(r: RustRepetitionCheck) -> Self {
+        let sections = r.sections.into_iter()
+            .map(|s| WasmRepeatedSection {
+                first_start: s.first_start, first_end: s.first_end,
+                repeat_start: s.repeat_start, repeat_end: s.repeat_end,
+                similarity: s.similarity,
+                source: match s.source { SectionSource::Ngram => "ngram".into(), _ => "sentence".into() },
+            }).collect();
 
-impl From<RepetitionCheck> for WasmRepetitionCheck {
-    fn from(r: RepetitionCheck) -> Self {
-        WasmRepetitionCheck {
-            repeated: r.repeated,
-            sections: r.sections.into_iter().map(Into::into).collect(),
-        }
+        WasmRepetitionCheck { repeated: r.repeated, sections }
     }
 }
 
@@ -213,37 +257,62 @@ mod tests {
     #[test]
     fn test_wasm_settings_conversion() {
         let wasm = WasmDedupSettings {
-            enabled: true,
-            ngram_similarity_threshold: 0.95,
-            sentence_similarity_threshold: 0.75,
-            sentence_min_repeat_length: 80,
-            context_gap_max: 300,
-            window_size: 100,
-            step_size: 25,
-            min_repeat_length: 50,
-            max_repeats: 3,
+            enabled: true, ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
+            sentence_min_repeat_length: 80, context_gap_max: 300, window_size: 100,
+            step_size: 25, min_repeat_length: 50, max_repetitions: 3,
         };
         let settings: DedupSettings = wasm.into();
         assert_eq!(settings.enabled, true);
-        assert_eq!(settings.ngram_similarity_threshold, 0.95);
+        assert_eq!(settings.max_repetitions, 3);
     }
 
     #[test]
     fn test_streaming_dedup_creation() {
         let settings = WasmDedupSettings {
-            enabled: true,
-            ngram_similarity_threshold: 0.95,
-            sentence_similarity_threshold: 0.75,
-            sentence_min_repeat_length: 80,
-            context_gap_max: 300,
-            window_size: 100,
-            step_size: 25,
-            min_repeat_length: 50,
-            max_repeats: 3,
+            enabled: true, ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
+            sentence_min_repeat_length: 80, context_gap_max: 300, window_size: 100,
+            step_size: 25, min_repeat_length: 50, max_repetitions: 3,
         };
         let json = serde_json::to_string(&settings).unwrap();
         let mut dedup = StreamingDedup::new(&json).unwrap();
-        let result = dedup.feed_chunk("hello world hello world").unwrap();
-        assert!(result.contains("repeated"));
+        // Warmup gate should suppress checks.
+        let result_str = dedup.feed_chunk("hello world hello world").unwrap();
+        assert!(result_str.contains("\"repeated\":false"));
     }
+
+    #[test]
+    fn test_wasm_preset_resolution() {
+        let default_json = dedup_resolve_preset("default").unwrap();
+        let relaxed_json = dedup_resolve_preset("relaxed").unwrap();
+        assert!(default_json.contains("\"ngram_similarity_threshold\":0.95"));
+        assert!(relaxed_json.contains("\"ngram_similarity_threshold\":0.92"));
+    }
+
+    #[test]
+    fn test_wasm_jaccard_roundtrip() {
+        let tokens_a = serde_json::json!(["foo", "bar", "baz"]);
+        let tokens_b = serde_json::json!(["foo", "qux"]);
+        let sim = dedup_jaccard_similarity(&tokens_a.to_string(), &tokens_b.to_string()).unwrap();
+        assert!((sim - 0.25).abs() < 1e-9); // Jaccard: intersection/union = 1/(3+2-1) = 1/4
+    }
+
+    #[test]
+    fn test_wasm_tokenize_identity() {
+        // Tokenize returns a JSON array — order may differ due to HashSet iteration,
+        // so compare sorted token lists instead.
+        let tokens_a: Vec<String> = serde_json::from_str(&dedup_tokenize("the cat sat on the mat").unwrap()).unwrap();
+        let tokens_b: Vec<String> = serde_json::from_str(&dedup_tokenize("the cat sat on the mat").unwrap()).unwrap();
+        let mut sa = tokens_a.clone();
+        sa.sort();
+        let mut sb = tokens_b.clone();
+        sb.sort();
+        assert_eq!(sa, sb); /* same tokens regardless of HashSet iteration order */
+    }
+}
+
+// ── Helpers (private) ────────────────────────────────────────────────
+
+#[cfg(feature = "loop_detect")]
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

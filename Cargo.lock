@@ -87,6 +87,7 @@ name = "dedup-wasm"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "getrandom",
  "memchr 2.8.0",
  "once_cell 1.21.4 (git+https://git.sly.so/kade/once_cell)",
  "regex",
@@ -132,10 +133,12 @@ version = "0.4.2"
 source = "git+https://git.sly.so/kade/getrandom#91bfbf9276c5407532ae746efe30bd6f06f8d146"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasip2",
  "wasip3",
+ "wasm-bindgen",
 ]
 
 [[package]]
