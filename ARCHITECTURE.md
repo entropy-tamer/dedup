@@ -13,26 +13,6 @@ The streaming deduplication system in `packages/coding-agent/src/core/` caused h
 
 ## Three-Layer Defense Architecture
 
-```mermaid
-graph TD
-    A[Assistant output stream] --> B[StreamingDedup Monitor<br/>In-turn dedup + gating]
-    B --> C{Repetition detected?}
-    C -- no --> D[Continue streaming]
-    C -- yes --> E[Determine Action<br/>none / steer / abort]
-    E -- none/steer --> F[Inject corrective message into prompt]
-    E -- abort --> G[Halt stream + log diagnostic]
-
-    B --> H{Cross-turn loop detected?}
-    H -- no --> D
-    H -- yes --> I{Thought loop?}
-    I -- yes --> J[Thought loop correction<br/>different approach needed]
-    I -- no --> K[Tool-call escalation<br/>tiered corrective messages]
-    K --> L{Max repeats exceeded?}
-    L -- yes --> G
-    L -- no --> F
-
-```
-
 ### Layer 1: In-Turn Text Deduplication (`deduplicate.rs`)
 
 Detects when the model repeats itself within a single message. This handles the "the same paragraph twice" problem — identical or near-identical text appearing multiple times in one response.
@@ -58,7 +38,6 @@ classDiagram
         +new(DedupSettings) Self
         +feed_chunk(&mut self, chunk: &str) RepetitionCheck
         +determine_action(&self, last_check: &RepetitionCheck) StreamAction
-        +reset(&mut self)
     }
 
     class DedupSettings {
@@ -111,7 +90,7 @@ flowchart TD
     B -- no --> C[STEER<br/>sentence-level semantic match only]
     B -- yes --> D{repetition_count >= max_repetitions?}
     D -- yes --> E[ABORT]
-    D -- no --> F{≥2 strong n-gram confirms<br/>(similarity > 0.9)?}
+    D -- no --> F{>=2 strong n-gram confirms?<br/>(similarity > 0.9)}
     F -- yes --> E
     F -- no --> C
 
@@ -191,15 +170,12 @@ All public functions are exported via `wasm-bindgen` and callable from TypeScrip
 
 | Rust Function | WASM Export | JS Signature |
 |---------------|-------------|--------------|
-| `check_repetition(text, settings)` | `dedup_check_repetition` | `(text: string, settingsJson: string) => {repeated, sections[]}` |
-| `deduplicate_text(text, settings)` | `dedup_deduplicate_text` | `(text: string, settingsJson: string) => string` |
-| `get_repetition_ratio(text, settings)` | `dedup_get_repetition_ratio` | `(text: string, settingsJson: string) => number` |
-| `jaccard_similarity(tokens_a, tokens_b)` | `dedup_jaccard_similarity` | `(tokensA: string[], tokensB: string[]) => number` |
-| `tokenize(text)` | `dedup_tokenize` | `(text: string) => string[]` |
-| `resolve_dedup_preset(name)` | `dedup_resolve_preset` | `(name: string) => DedupSettings JSON` |
-| `StreamingDedup::new(settings)` | `streamingdedup_new` | Constructor → instance pointer |
-| `StreamingDedup::feed_chunk(chunk)` | `streamingdedup_feed_chunk` | Instance method, returns check result |
-| `StreamingDedup::determine_action(check)` | `streamingdedup_determine_action` | Instance method, returns "none"/"steer"/"abort" |
+| `check_repetition(text, settings)` | `dedup_check_repetition` | `(text, settingsJson) => {repeated, sections[]}` |
+| `deduplicate_text(text, settings)` | `dedup_deduplicate_text` | `(text, settingsJson) => string` |
+| `get_repetition_ratio(text, settings)` | `dedup_get_repetition_ratio` | `(text, settingsJson) => number` |
+| `jaccard_similarity(tokens_a, tokens_b)` | `dedup_jaccard_similarity` | `(tokensA, tokensB) => number` |
+| `tokenize(text)` | `dedup_tokenize` | `(text) => string[]` |
+| `resolve_dedup_preset(name)` | `dedup_resolve_preset` | `(name) => DedupSettings JSON` |
 
 ## Cross-Module Data Flow
 
@@ -208,7 +184,7 @@ sequenceDiagram
     participant TS as TypeScript (coding-agent)
     participant WASM as Rust/WASM
     participant Ngram as ngram.rs (rolling hash)
-    participant Sim as similarity.rs (Jaccard/char-ngram)
+    participant Sim as similarity.rs
 
     Note over TS,WASM: In-Turn Deduplication
     TS->>WASM: checkRepetition(text, settingsJSON)
@@ -256,9 +232,9 @@ When only `similarityThreshold` is set (legacy API), both n-gram and sentence th
 
 The binary is larger than the original target because it includes all three layers plus serde serialization/deserialization for JSON interop with TypeScript. Optimization candidates: strip debug symbols, enable `lto = "thin"`, or remove unused features from serde/wasm-bindgen dependencies.
 
-## Hard-Won Lessons (from Phase 0–4)
+## Hard-Won Lessons (from Phase 0–5)
 
-1. **`std::time::Instant` is not available on wasm32-unknown-unknown**. The warmup gate in Rust uses it — must be gated behind `#[cfg(not(target_arch = "wasm32"))]`.
+1. **`std::time::Instant` is not available on wasm32-unknown-unknown**. The warmup gate in Rust uses it — must be gated behind `#[cfg(not(target_arch = "wasm32"))]`. This was the root cause of a panic when WASM tried to create the streaming state.
 
 2. **`getrandom` requires the `wasm_js` feature** for random hashing in ahash/RandomState on wasm32. Added as a target-specific dependency: `{ git = "https://git.sly.so/kade/getrandom", features = ["wasm_js"] }`. This creates a version conflict with kade's fork of wasm-bindgen — resolved by pointing both to the same git commit.
 
@@ -269,3 +245,11 @@ The binary is larger than the original target because it includes all three laye
 5. **WASM FFI uses pointer/length + malloc/free**, not direct value passing. String marshaling between JS and WASM memory is handled by `__wbindgen_malloc`, `__wbindgen_realloc`, `__wbindgen_free` (the glue code generated by wasm-bindgen).
 
 6. **Externref table initialization** requires a specific setup in the loader — 4-slot grow with `(undefined, null, true, false)` pattern so error values can be thrown across FFI boundaries via `takeFromExternrefTable(idx)`.
+
+7. **WASM imports must match exact names from the binary**. The import `__wbg___wbindgen_throw_9c75d47bf9e7731e` needs a triple-underscore prefix (`__wbg_`) — matching exactly what wasm-bindgen generates in `_bg.wasm`. Using `__wbindgen_throw_*` without the `__wbg_` prefix fails with "function import requires a callable" because WebAssembly resolves imports by exact string match.
+
+8. **WASM `getRandomValues` import** is needed for ahash's RandomState on wasm32 (random number seeding). Provide it via: `(bufPtr, bufLen) => { crypto.getRandomValues(memory.subarray(bufPtr >>> 0, bufLen)); }`. Must be called with the buffer range as two separate i32 parameters.
+
+9. **`__wbindgen_cast_0000000000000001` cast intrinsic** for `Ref(String) → Externref`: takes a pointer + length pair, decodes from UTF-8, returns the JS string as an externref table slot.
+
+10. **WASM module initialization requires calling `__wbindgen_start()`** after creating the Instance to finalize externref table setup. Without this call, error throwing across FFI boundaries may not work correctly.
