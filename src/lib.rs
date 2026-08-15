@@ -308,6 +308,105 @@ mod tests {
         sb.sort();
         assert_eq!(sa, sb); /* same tokens regardless of HashSet iteration order */
     }
+
+    // ── Scenario A + G regression tests (ported from loop-dedup-bug.ts) ─
+
+    #[test]
+    fn scenario_a_cross_turn_loop_detection_stops_at_max_repeats() {
+        use crate::loop_detect::{self, LoopCheckOutcome, LoopDetectionState};
+
+        let settings = loop_detect::DEFAULT_LOOP_DETECTION_SETTINGS;
+        let empty_state = LoopDetectionState {
+            window: vec![], repeat_count: 0, corrective_injected: false,
+            turn_count: 0, escalation_tier: 0,
+        };
+        let repeated_text = "echo test message content that will be hashed".to_string();
+
+        // Turn 1: empty window -> NoMatch.
+        let (outcome, state) = loop_detect::check_loop(&repeated_text, empty_state.clone(), &settings);
+        assert!(matches!(outcome, LoopCheckOutcome::NoMatch));
+
+        // Turn 2: first repeat detected. corrective injected with tier=1.
+        let (outcome, state) = loop_detect::check_loop(&repeated_text, state, &settings);
+        if let LoopCheckOutcome::EscalationMessage { message, tier, .. } = outcome {
+            assert_eq!(tier, 1);
+            assert!(message.contains("time(s) with the same arguments"));
+        } else {
+            panic!("Expected EscalationMessage on turn 2, got {:?}", outcome);
+        }
+
+        // Turn 3: second repeat. Constant backoff (interval=2): (2-1)%2 != 0 -> no injection.
+        let (outcome, state) = loop_detect::check_loop(&repeated_text, state, &settings);
+        assert!(matches!(outcome, LoopCheckOutcome::EscalationNotInjected { .. }));
+
+        // Turn 4: third repeat reaches max_repeats=3 -> StopSession.
+        let (outcome, _state) = loop_detect::check_loop(&repeated_text, state, &settings);
+        if let LoopCheckOutcome::StopSession { reason, final_tier, .. } = outcome {
+            assert!(reason.contains("Loop detected"), "StopSession reason missing 'Loop detected': {}", reason);
+                        // Tier is 2 because the Constant backoff (interval=2) re-injected on repeat_count=3
+            // before max_repeats kicked in to stop.
+            assert_eq!(final_tier as u8, 2);
+        } else {
+            panic!("Expected StopSession on turn 4, got {:?}", outcome);
+        }
+    }
+
+    #[test]
+    fn scenario_a_model_breaks_pattern_after_corrective() {
+        use crate::loop_detect::{self, LoopCheckOutcome, LoopDetectionState};
+
+        let settings = loop_detect::DEFAULT_LOOP_DETECTION_SETTINGS;
+        let empty_state = LoopDetectionState {
+            window: vec![], repeat_count: 0, corrective_injected: false,
+            turn_count: 0, escalation_tier: 0,
+        };
+
+        // Turn 1 + 2 same tool call (triggers corrective).
+        let sig_a = "echo test message content that will be hashed".to_string();
+        let (_o1, s1) = loop_detect::check_loop(&sig_a, empty_state.clone(), &settings);
+        let (o2, s2) = loop_detect::check_loop(&sig_a, s1, &settings); // repeat detected
+        assert!(matches!(o2, LoopCheckOutcome::EscalationMessage { .. }));
+
+        // Turn 3: model breaks pattern — different tool call text.
+        let sig_b = "read /some/other/file/path/to/something/unrelated".to_string();
+        let (outcome, _) = loop_detect::check_loop(&sig_b, s2, &settings);
+
+        match outcome {
+            LoopCheckOutcome::NoMatch | LoopCheckOutcome::EscalationNotInjected { .. } => {},
+            other => panic!("Expected NoMatch/NotInjected after pattern break, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn scenario_g_verbatim_repetition_detected() {
+        let repeated_block = "The configuration system loads settings from a layered set of sources, \
+                              merging them in a strict priority order that determines the final resolved values.";
+        let loop_text = format!("{}\n\n{}\n\n{}", repeated_block, repeated_block, repeated_block);
+
+        let settings = DedupSettings::default();
+        let result = check_repetition(&loop_text, &settings);
+
+        assert!(result.repeated,
+            "verbatim repetition must be detected but got no match");
+        // Verify the detected sections have high similarity (near-exact copy).
+        for s in &result.sections {
+            assert!((s.similarity - 1.0).abs() < 1e-6, 
+                "Expected near-perfect similarity for verbatim repetition, got {:.4}", s.similarity);
+        }
+    }
+
+    #[test]
+    fn scenario_g_reworded_content_no_false_positive() {
+        let text = "Let me check the r docs for the configuration schema and the expected field names. \
+                    The documentation explains the exact structure and the validation rules we need to follow. \
+                    We should consult the r docs once more to confirm the nested keys, then review the documentation for the type constraints.";
+
+        let settings = DedupSettings::default();
+        let result = check_repetition(text, &settings);
+
+        assert!(!result.repeated,
+            "reworded content must NOT be flagged as repetition (the 'r docs' regression)");
+    }
 }
 
 // ── Helpers (private) ────────────────────────────────────────────────

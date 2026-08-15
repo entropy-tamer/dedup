@@ -66,8 +66,17 @@ classDiagram
         +source SectionSource
     }
 
-    enum SectionSource "ngram" / "sentence"
-    enum StreamAction "None" / "Steer" / "Abort"
+    class SectionSource {
+        <<enum>>
+        +ngram int
+        +sentence int
+    }
+    class StreamAction {
+        <<enum>>
+        +None int
+        +Steer int
+        +Abort int
+    }
 
     StreamingState --> DedupSettings : uses
     RepetitionCheck --> RepeatedSection : contains
@@ -90,7 +99,7 @@ flowchart TD
     B -- no --> C[STEER<br/>sentence-level semantic match only]
     B -- yes --> D{repetition_count >= max_repetitions?}
     D -- yes --> E[ABORT]
-    D -- no --> F{>=2 strong n-gram confirms?<br/>(similarity > 0.9)}
+    D -- no --> F{>=2 strong n-gram confirms? similarity > 0.9}
     F -- yes --> E
     F -- no --> C
 
