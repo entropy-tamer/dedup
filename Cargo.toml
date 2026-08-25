@@ -9,6 +9,10 @@ repository = "https://git.sly.so/kade/stalk"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[test]]
+name = "dedup_tests"
+path = "test/dedup_tests.rs"
+
 [dependencies]
 serde = { git = "https://git.sly.so/kade/serde", package = "serde", features = ["derive"] }
 serde_json = { git = "https://git.sly.so/kade/serde_json" }

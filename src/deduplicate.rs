@@ -29,9 +29,13 @@ pub struct DedupSettings {
     /// Number of consecutive near-identical (n-gram) section detections before aborting the stream. Default 3.
     #[serde(default = "default_max_repetitions")]
     pub max_repetitions: usize,
+    /// Warmup window in milliseconds before repetition checks begin. Default 3000.
+    #[serde(default = "default_warmup_ms")]
+    pub warmup_ms: u64,
 }
 
 fn default_max_repetitions() -> usize { 3 }
+fn default_warmup_ms() -> u64 { 3000 }
 
 impl Default for DedupSettings {
     fn default() -> Self {
@@ -45,6 +49,7 @@ impl Default for DedupSettings {
             step_size: 25,
             min_repeat_length: 50,
             max_repetitions: default_max_repetitions(),
+            warmup_ms: default_warmup_ms(),
         }
     }
 }
@@ -140,9 +145,9 @@ impl StreamingState {
         self.content.push_str(chunk);
         let after_len = self.content.len();
 
-        // Warmup gate (matches TS warmupMs default of 3000). Skipped on WASM targets.
+        // Warmup gate (matches TS warmupMs default of 3000). Skipped on WASM targets and when warmup_ms is 0.
         #[cfg(not(target_arch = "wasm32"))]
-        if self.start_time.elapsed().as_millis() < 3000 {
+        if self.settings.warmup_ms > 0 && self.start_time.elapsed().as_millis() < self.settings.warmup_ms as u128 {
             return RepetitionCheck { repeated: false, sections: Vec::new() };
         }
 

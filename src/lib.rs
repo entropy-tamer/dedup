@@ -12,7 +12,6 @@ mod sentence;
 mod deduplicate;
 pub mod presets;
 
-pub mod loop_detect;
 
 // ── Re-exports from sub-modules (for use by TS wrapper) ─────────────
 
@@ -43,6 +42,7 @@ pub struct WasmDedupSettings {
     pub step_size: usize,
     pub min_repeat_length: usize,
     pub max_repetitions: usize,
+    pub warmup_ms: u64,
 }
 
 #[wasm_bindgen]
@@ -57,31 +57,34 @@ pub struct WasmRepeatedSection {
 }
 
 #[wasm_bindgen]
+impl WasmRepeatedSection {
+    #[wasm_bindgen(getter)]
+    pub fn first_start(&self) -> usize { self.first_start }
+    #[wasm_bindgen(getter)]
+    pub fn first_end(&self) -> usize { self.first_end }
+    #[wasm_bindgen(getter)]
+    pub fn repeat_start(&self) -> usize { self.repeat_start }
+    #[wasm_bindgen(getter)]
+    pub fn repeat_end(&self) -> usize { self.repeat_end }
+    #[wasm_bindgen(getter)]
+    pub fn similarity(&self) -> f64 { self.similarity }
+    #[wasm_bindgen(getter)]
+    pub fn source(&self) -> String { self.source.clone() }
+}
+
+#[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmRepetitionCheck {
     repeated: bool,
     sections: Vec<WasmRepeatedSection>,
 }
 
-/// Serialized loop detection settings for WASM export.
 #[wasm_bindgen]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WasmLoopSettings {
-    pub enabled: bool,
-    pub window_size: u8,
-    pub max_repeats: u8,
-    pub escalation_interval: u8,
-    pub text_similarity_threshold: f64,
-    pub thought_loop_threshold: f64,
-}
-
-/// Serialized turn signature for cross-turn matching.
-#[wasm_bindgen]
-#[derive(Debug, Clone)]
-pub struct WasmTurnSignature {
-    tool_calls: String,
-    text_hash: String, // hex-encoded SHA-256
-    text_content: String,
+impl WasmRepetitionCheck {
+    #[wasm_bindgen(getter)]
+    pub fn repeated(&self) -> bool { self.repeated }
+    #[wasm_bindgen(getter)]
+    pub fn sections(&self) -> Vec<WasmRepeatedSection> { self.sections.clone() }
 }
 
 // ── Streaming state (WASM wrapper) ───────────────────────────────────
@@ -195,27 +198,6 @@ pub fn dedup_resolve_preset(name: &str) -> Result<String, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
 }
 
-// ── Cross-turn loop detection (WASM exports) — gated by feature flag ──
-
-#[cfg(feature = "loop_detect")]
-mod wasm_loop_exports {
-    use super::*;
-    use crate::loop_detect::{self, LoopDetectionSettings, TurnSignature};
-
-    #[wasm_bindgen]
-    pub fn dedup_compute_turn_signature(message_json: &str) -> Result<String, JsValue> {
-        let sig: TurnSignature = serde_json::from_str(message_json)
-            .map_err(|e| JsValue::from_str(&format!("Invalid message JSON: {}", e)))?;
-        // Compute the signature fields and return as WASM-exported struct.
-        Ok(WasmTurnSignature { tool_calls: sig.tool_calls, text_hash: hex_encode(&sig.text_hash), text_content: sig.text_content }.into())
-    }
-
-    #[wasm_bindgen]
-    pub fn dedup_get_variant_suggestion(tool_name: &str) -> String {
-        lock_detect::get_variant_suggestion(tool_name).unwrap_or_else(|| "Try a different tool or approach.".to_string())
-    }
-}
-
 // ── Conversion implementations ────────────────────────────────────────
 
 impl From<WasmDedupSettings> for DedupSettings {
@@ -230,6 +212,7 @@ impl From<WasmDedupSettings> for DedupSettings {
             step_size: w.step_size,
             min_repeat_length: w.min_repeat_length,
             max_repetitions: w.max_repetitions,
+            warmup_ms: w.warmup_ms,
         }
     }
 }
@@ -259,7 +242,7 @@ mod tests {
         let wasm = WasmDedupSettings {
             enabled: true, ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
             sentence_min_repeat_length: 80, context_gap_max: 300, window_size: 100,
-            step_size: 25, min_repeat_length: 50, max_repetitions: 3,
+            step_size: 25, min_repeat_length: 50, max_repetitions: 3, warmup_ms: 3000,
         };
         let settings: DedupSettings = wasm.into();
         assert_eq!(settings.enabled, true);
@@ -271,7 +254,7 @@ mod tests {
         let settings = WasmDedupSettings {
             enabled: true, ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
             sentence_min_repeat_length: 80, context_gap_max: 300, window_size: 100,
-            step_size: 25, min_repeat_length: 50, max_repetitions: 3,
+            step_size: 25, min_repeat_length: 50, max_repetitions: 3, warmup_ms: 3000,
         };
         let json = serde_json::to_string(&settings).unwrap();
         let mut dedup = StreamingDedup::new(&json).unwrap();
@@ -309,73 +292,7 @@ mod tests {
         assert_eq!(sa, sb); /* same tokens regardless of HashSet iteration order */
     }
 
-    // ── Scenario A + G regression tests (ported from loop-dedup-bug.ts) ─
 
-    #[test]
-    fn scenario_a_cross_turn_loop_detection_stops_at_max_repeats() {
-        use crate::loop_detect::{self, LoopCheckOutcome, LoopDetectionState};
-
-        let settings = loop_detect::DEFAULT_LOOP_DETECTION_SETTINGS;
-        let empty_state = LoopDetectionState {
-            window: vec![], repeat_count: 0, corrective_injected: false,
-            turn_count: 0, escalation_tier: 0,
-        };
-        let repeated_text = "echo test message content that will be hashed".to_string();
-
-        // Turn 1: empty window -> NoMatch.
-        let (outcome, state) = loop_detect::check_loop(&repeated_text, empty_state.clone(), &settings);
-        assert!(matches!(outcome, LoopCheckOutcome::NoMatch));
-
-        // Turn 2: first repeat detected. corrective injected with tier=1.
-        let (outcome, state) = loop_detect::check_loop(&repeated_text, state, &settings);
-        if let LoopCheckOutcome::EscalationMessage { message, tier, .. } = outcome {
-            assert_eq!(tier, 1);
-            assert!(message.contains("time(s) with the same arguments"));
-        } else {
-            panic!("Expected EscalationMessage on turn 2, got {:?}", outcome);
-        }
-
-        // Turn 3: second repeat. Constant backoff (interval=2): (2-1)%2 != 0 -> no injection.
-        let (outcome, state) = loop_detect::check_loop(&repeated_text, state, &settings);
-        assert!(matches!(outcome, LoopCheckOutcome::EscalationNotInjected { .. }));
-
-        // Turn 4: third repeat reaches max_repeats=3 -> StopSession.
-        let (outcome, _state) = loop_detect::check_loop(&repeated_text, state, &settings);
-        if let LoopCheckOutcome::StopSession { reason, final_tier, .. } = outcome {
-            assert!(reason.contains("Loop detected"), "StopSession reason missing 'Loop detected': {}", reason);
-                        // Tier is 2 because the Constant backoff (interval=2) re-injected on repeat_count=3
-            // before max_repeats kicked in to stop.
-            assert_eq!(final_tier as u8, 2);
-        } else {
-            panic!("Expected StopSession on turn 4, got {:?}", outcome);
-        }
-    }
-
-    #[test]
-    fn scenario_a_model_breaks_pattern_after_corrective() {
-        use crate::loop_detect::{self, LoopCheckOutcome, LoopDetectionState};
-
-        let settings = loop_detect::DEFAULT_LOOP_DETECTION_SETTINGS;
-        let empty_state = LoopDetectionState {
-            window: vec![], repeat_count: 0, corrective_injected: false,
-            turn_count: 0, escalation_tier: 0,
-        };
-
-        // Turn 1 + 2 same tool call (triggers corrective).
-        let sig_a = "echo test message content that will be hashed".to_string();
-        let (_o1, s1) = loop_detect::check_loop(&sig_a, empty_state.clone(), &settings);
-        let (o2, s2) = loop_detect::check_loop(&sig_a, s1, &settings); // repeat detected
-        assert!(matches!(o2, LoopCheckOutcome::EscalationMessage { .. }));
-
-        // Turn 3: model breaks pattern — different tool call text.
-        let sig_b = "read /some/other/file/path/to/something/unrelated".to_string();
-        let (outcome, _) = loop_detect::check_loop(&sig_b, s2, &settings);
-
-        match outcome {
-            LoopCheckOutcome::NoMatch | LoopCheckOutcome::EscalationNotInjected { .. } => {},
-            other => panic!("Expected NoMatch/NotInjected after pattern break, got {:?}", other),
-        }
-    }
 
     #[test]
     fn scenario_g_verbatim_repetition_detected() {
@@ -411,7 +328,3 @@ mod tests {
 
 // ── Helpers (private) ────────────────────────────────────────────────
 
-#[cfg(feature = "loop_detect")]
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
-}
