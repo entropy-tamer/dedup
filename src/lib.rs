@@ -28,6 +28,8 @@ pub use sentence::split_sentences;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+fn default_warmup_ms() -> u64 { 3000 }
+
 // ── WASM-exported types ─────────────────────────────────────────────
 
 #[wasm_bindgen]
@@ -42,6 +44,7 @@ pub struct WasmDedupSettings {
     pub step_size: usize,
     pub min_repeat_length: usize,
     pub max_repetitions: usize,
+    #[serde(default = "default_warmup_ms")]
     pub warmup_ms: u64,
 }
 
