@@ -1,6 +1,6 @@
-# Dedup-WASM Architecture
+# dedup Architecture
 
-Text deduplication and loop detection for streaming assistant output, implemented in Rust and compiled to WebAssembly. The goal is to replace O(n²) n-gram comparison in TypeScript with a constant-time Rust implementation that runs on the main thread without blocking.
+Text deduplication for streaming assistant output, implemented in Rust and compiled to WebAssembly. The goal is to replace O(n²) n-gram comparison in TypeScript with a constant-time Rust implementation that runs on the main thread without blocking.
 
 ## Problem
 
@@ -105,55 +105,6 @@ flowchart TD
 
 ```
 
-### Layer 3: Cross-Turn Loop Detection (`loop_detect.rs`)
-
-Detects when the model repeats its action pattern across multiple turns (calls same tool with same arguments repeatedly). This handles the "read this file, then read it again" loop problem.
-
-**Turn signature:** Each turn is summarized as a `TurnSignature { tool_calls: String, text_hash_hex: String }` — captures both what tools were called and a hash of the assistant's reasoning text. Two turns with matching signatures indicate the model is repeating its previous action.
-
-```mermaid
-classDiagram
-    class LoopDetectionSettings {
-        +enabled bool
-        +window_size u8
-        +max_repeats u8
-        +escalation_interval u8
-        +text_similarity_threshold f64
-        +thought_loop_threshold f64
-    }
-
-    class TurnSignature {
-        +tool_calls String
-        +text_hash_hex String
-    }
-
-    class LoopCheckOutcome {
-        <<enum>>
-        NoMatch
-        EscalationNotInjected tier: u8
-        EscalationMessage message tier repeated_tool_name thought_loop
-        StopSession reason final_tier
-    }
-
-    class EscalationBackoff {
-        <<enum>>
-        Constant count: u8
-        Geometric threshold: usize
-    }
-
-    LoopCheckOutcome --> EscalationBackoff : uses
-    LoopDetectionSettings --> TurnSignature : processes
-```
-
-**Escalation backoff modes:**
-
-| Mode | Formula | Effect |
-|------|---------|--------|
-| Constant | Re-inject every `escalation_interval` repeats after first | Predictable, simple timing |
-| Geometric | Tier-N fires at repeat N² (1→1, 2→4, 3→9) | Longer recovery windows between corrections |
-
-**Thought loop detection:** When the model's reasoning text is similar across turns but tool calls differ (or are absent), the model is circling the same ideas without changing its approach. Detected separately from tool-call loops with a configurable threshold.
-
 ## Module Dependency Graph
 
 ```mermaid
@@ -163,14 +114,12 @@ graph LR
     D[similarity.rs<br/>Jaccard + char-n-gram] --> B
     E[split_sentences.rs] --> B
     B --> F[presets.rs]
-    B --> G[loop_detect.rs]
     H[lib.rs<br/>WASM exports] --> A
     H --> C
     H --> D
     H --> E
     H --> B
     H --> F
-    H --> G
 ```
 
 ## WASM Export Surface
