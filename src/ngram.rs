@@ -19,23 +19,23 @@ pub fn compute_ngram_hashes(text: &str, window_size: usize, step_size: usize) ->
     }
 
     let hasher = NgramHasher::new(window_size);
-    
+
     // Compute all rolling hashes with step=1
     let mut all_hashes = Vec::with_capacity(len - window_size + 1);
     let mut hash = hasher.initial_hash(bytes);
     all_hashes.push(hash);
-    
+
     for i in 1..=len.saturating_sub(window_size) {
         hash = hasher.roll_hash(hash, bytes[i - 1], bytes[i + window_size - 1]);
         all_hashes.push(hash);
     }
-    
+
     // Subsample by step_size
     let mut hashes = Vec::with_capacity((len - window_size) / step_size + 1);
     for i in (0..all_hashes.len()).step_by(step_size) {
         hashes.push(all_hashes[i]);
     }
-    
+
     hashes
 }
 
@@ -112,6 +112,11 @@ pub fn hash_bytes(bytes: &[u8]) -> u64 {
 ///
 /// Returns pairs of (i, j) indices where hashes match.
 /// Caller should verify with actual string comparison.
+///
+/// Performance note: each position is paired ONLY with the first occurrence
+/// of its hash, giving O(n) candidate pairs even on fully repetitive text.
+/// The old all-pairs-per-bucket behavior was O(k^2) per bucket and made
+/// check_repetition super-quadratic on repetitive input (6.8s @ 2KB).
 pub fn find_hash_matches(
     hashes: &[u64],
     _threshold: f64, // Not used for hash, but kept for API consistency
@@ -124,10 +129,9 @@ pub fn find_hash_matches(
     let mut matches = Vec::new();
     for positions_list in positions.values() {
         if positions_list.len() > 1 {
-            for i in 0..positions_list.len() {
-                for j in i + 1..positions_list.len() {
-                    matches.push((positions_list[i], positions_list[j]));
-                }
+            let first = positions_list[0];
+            for &later in &positions_list[1..] {
+                matches.push((first.min(later), first.max(later)));
             }
         }
     }

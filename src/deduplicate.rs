@@ -6,11 +6,10 @@
 //! - `get_repetition_ratio` — fraction of text that is repetitive content
 //! - `StreamingState` — incremental state machine with warmup gate, min-content-length gate, and action determination
 
-use crate::ngram::{compute_ngram_hashes, find_hash_matches, compute_ngram_strings};
-use crate::similarity::{jaccard_similarity, char_ngram_similarity, TokenSet};
+use crate::ngram::{compute_ngram_hashes, find_hash_matches};
+use crate::sentence::{Sentence, split_sentences};
+use crate::similarity::{TokenSet, char_ngram_similarity, jaccard_similarity};
 use crate::tokenize::tokenize;
-use crate::sentence::{split_sentences, Sentence};
-use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
 
 // ── Settings ────────────────────────────────────────────────────────
@@ -34,8 +33,12 @@ pub struct DedupSettings {
     pub warmup_ms: u64,
 }
 
-fn default_max_repetitions() -> usize { 3 }
-fn default_warmup_ms() -> u64 { 3000 }
+fn default_max_repetitions() -> usize {
+    3
+}
+fn default_warmup_ms() -> u64 {
+    3000
+}
 
 impl Default for DedupSettings {
     fn default() -> Self {
@@ -147,20 +150,33 @@ impl StreamingState {
 
         // Warmup gate (matches TS warmupMs default of 3000). Skipped on WASM targets and when warmup_ms is 0.
         #[cfg(not(target_arch = "wasm32"))]
-        if self.settings.warmup_ms > 0 && self.start_time.elapsed().as_millis() < self.settings.warmup_ms as u128 {
-            return RepetitionCheck { repeated: false, sections: Vec::new() };
+        if self.settings.warmup_ms > 0
+            && self.start_time.elapsed().as_millis() < self.settings.warmup_ms as u128
+        {
+            return RepetitionCheck {
+                repeated: false,
+                sections: Vec::new(),
+            };
         }
 
         let min_check_len = after_len; // we gate by total content length below
         // Content length gate (default 400 chars from TS).
-        if min_check_len < self.settings.min_repeat_length * 8 /* ~400 */ {
-            return RepetitionCheck { repeated: false, sections: Vec::new() };
+        if min_check_len < self.settings.min_repeat_length * 8
+        /* ~400 */
+        {
+            return RepetitionCheck {
+                repeated: false,
+                sections: Vec::new(),
+            };
         }
 
         // Chunk delta gate — don't re-check unless at least some new content has arrived.
         let chunk_delta = after_len.saturating_sub(before_len);
         if before_len > 0 && chunk_delta == 0 {
-            return RepetitionCheck { repeated: false, sections: Vec::new() };
+            return RepetitionCheck {
+                repeated: false,
+                sections: Vec::new(),
+            };
         }
 
         // Update n-gram hashes for the full accumulated content.
@@ -176,7 +192,11 @@ impl StreamingState {
         }
 
         // Update repetition count — only n-gram (near-exact) sections contribute toward the abort threshold.
-        let ngram_count = result.sections.iter().filter(|s| s.source == SectionSource::Ngram).count();
+        let ngram_count = result
+            .sections
+            .iter()
+            .filter(|s| s.source == SectionSource::Ngram)
+            .count();
         if result.repeated && ngram_count > 0 {
             self.repetition_count += ngram_count;
         } else {
@@ -200,7 +220,9 @@ impl StreamingState {
         }
 
         // Count n-gram confirms with high similarity (>0.9) in this single pass.
-        let strong_ngram_confirms: Vec<_> = last_check.sections.iter()
+        let strong_ngram_confirms: Vec<_> = last_check
+            .sections
+            .iter()
             .filter(|s| s.source == SectionSource::Ngram && s.similarity > 0.9)
             .collect();
 
@@ -213,13 +235,15 @@ impl StreamingState {
         StreamAction::Steer
     }
 
-        pub fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.content.clear();
         self.ngram_hashes.clear();
         self.last_check_end = 0;
         self.repetition_count = 0;
         #[cfg(not(target_arch = "wasm32"))]
-        { self.start_time = std::time::Instant::now(); }
+        {
+            self.start_time = std::time::Instant::now();
+        }
     }
 
     /// Reset the warmup timer without clearing content. Useful when resuming monitoring mid-stream.
@@ -246,7 +270,10 @@ impl StreamingState {
 /// 2. Sentence-level comparison for semantic repetition (catches rewording)
 pub fn check_repetition(text: &str, settings: &DedupSettings) -> RepetitionCheck {
     if !settings.enabled || text.len() < settings.min_repeat_length * 2 {
-        return RepetitionCheck { repeated: false, sections: Vec::new() };
+        return RepetitionCheck {
+            repeated: false,
+            sections: Vec::new(),
+        };
     }
 
     let mut sections = Vec::new();
@@ -259,7 +286,10 @@ pub fn check_repetition(text: &str, settings: &DedupSettings) -> RepetitionCheck
     let sentence_sections = check_sentence_pass(text, settings, &sections);
     sections.extend(sentence_sections);
 
-    RepetitionCheck { repeated: !sections.is_empty(), sections }
+    RepetitionCheck {
+        repeated: !sections.is_empty(),
+        sections,
+    }
 }
 
 /// First pass: n-gram similarity for near-identical repetition.
@@ -281,19 +311,23 @@ fn check_ngram_pass(text: &str, settings: &DedupSettings) -> Vec<RepeatedSection
         return Vec::new();
     }
 
-    // Compute n-gram strings for verification (same step=1 indices).
-    let ngram_strings: Vec<String> = compute_ngram_strings(text, hash_window_size, hash_step_size)
-        .into_iter().map(|s| s.to_string()).collect();
-
-    let mut sections = Vec::new();
-    let mut flagged = AHashSet::new();
+    let mut sections: Vec<RepeatedSection> = Vec::new();
 
     for (i, j) in matches {
-        if flagged.contains(&(i, j)) { continue; }
+        // Skip candidates whose windows overlap an already-accepted section —
+        // on repetitive text thousands of adjacent window pairs describe ONE
+        // repeated region pair; coalescing here keeps the pass linear.
+        let i_end = i + hash_window_size;
+        let j_end = j + hash_window_size;
+        if sections.iter().any(|s| {
+            i < s.first_end && i_end > s.first_start || j < s.repeat_end && j_end > s.repeat_start
+        }) {
+            continue;
+        }
 
-        // Verify with actual string comparison.
-        let a_text = &ngram_strings[i];
-        let b_text = &ngram_strings[j];
+        // Verify with actual string comparison (lazy slices, no upfront allocation).
+        let a_text = &text[i..i_end.min(text.len())];
+        let b_text = &text[j..j_end.min(text.len())];
 
         let a_tokens = tokenize(a_text);
         let b_tokens = tokenize(b_text);
@@ -302,25 +336,20 @@ fn check_ngram_pass(text: &str, settings: &DedupSettings) -> Vec<RepeatedSection
         let similarity = word_sim.max(char_sim);
 
         if similarity >= settings.ngram_similarity_threshold {
-            // i and j are hash indices with step=1 → correspond to byte positions.
-            let a_start = (i * hash_step_size).min(text.len());
-            let a_end = ((a_start + effective_window_size)).min(text.len());
-            let b_start = (j * hash_step_size).min(text.len());
-            let b_end = ((b_start + effective_window_size)).min(text.len());
+            let a_start = i.min(text.len());
+            let a_end = (a_start + effective_window_size).min(text.len());
+            let b_start = j.min(text.len());
+            let b_end = (b_start + effective_window_size).min(text.len());
 
             if b_end - b_start >= settings.min_repeat_length {
                 sections.push(RepeatedSection {
-                    first_start: a_start, first_end: a_end,
-                    repeat_start: b_start, repeat_end: b_end,
-                    similarity, source: SectionSource::Ngram,
+                    first_start: a_start,
+                    first_end: a_end,
+                    repeat_start: b_start,
+                    repeat_end: b_end,
+                    similarity,
+                    source: SectionSource::Ngram,
                 });
-
-                // Flag overlapping ranges to avoid duplicate detections.
-                for k in i..=j {
-                    for l in (k + 1)..=(j + 1) {
-                        flagged.insert((k.min(l), k.max(l)));
-                    }
-                }
             }
         }
     }
@@ -335,7 +364,9 @@ fn check_sentence_pass(
     existing_sections: &[RepeatedSection],
 ) -> Vec<RepeatedSection> {
     let sentences = split_sentences(text);
-    if sentences.len() < 2 { return Vec::new(); }
+    if sentences.len() < 2 {
+        return Vec::new();
+    }
 
     let mut sentence_matches = Vec::new();
 
@@ -346,19 +377,27 @@ fn check_sentence_pass(
 
             // Skip pairs already covered by n-gram detection.
             if existing_sections.iter().any(|s| {
-                s.repeat_start <= b.end && s.repeat_end >= b.start &&
-                s.first_start <= a.start && s.first_end >= a.end
-            }) { continue; }
+                s.repeat_start <= b.end
+                    && s.repeat_end >= b.start
+                    && s.first_start <= a.start
+                    && s.first_end >= a.end
+            }) {
+                continue;
+            }
 
             // Require proximity (300-char context gap default).
             let gap = b.start.saturating_sub(a.end);
-            if gap > settings.context_gap_max { continue; }
+            if gap > settings.context_gap_max {
+                continue;
+            }
 
             let a_tokens = tokenize(&a.text);
             let b_tokens = tokenize(&b.text);
             let word_sim = jaccard_similarity(&a_tokens, &b_tokens);
 
-            if word_sim >= settings.sentence_similarity_threshold && b.end - b.start >= settings.sentence_min_repeat_length {
+            if word_sim >= settings.sentence_similarity_threshold
+                && b.end - b.start >= settings.sentence_min_repeat_length
+            {
                 sentence_matches.push((a.start, a.end, b.start, b.end, word_sim));
             }
         }
@@ -367,23 +406,36 @@ fn check_sentence_pass(
     // Require corroborating evidence: ≥2 similar pairs, OR 1 strong pair (>0.9) confirmed by n-gram pass.
     let strong_pair = sentence_matches.iter().find(|m| m.4 > 0.9);
     let ngram_confirms_strong = strong_pair.map_or(false, |&(_, a_start, _, b_end, _)| {
-        existing_sections.iter().any(|s| s.repeat_start <= b_end && s.repeat_end >= a_start)
+        existing_sections
+            .iter()
+            .any(|s| s.repeat_start <= b_end && s.repeat_end >= a_start)
     });
 
     if sentence_matches.len() < 2 && !ngram_confirms_strong {
         return Vec::new();
     }
 
-    sentence_matches.into_iter().map(|(a_start, a_end, b_start, b_end, similarity)| RepeatedSection {
-        first_start: a_start, first_end: a_end, repeat_start: b_start, repeat_end: b_end,
-        similarity, source: SectionSource::Sentence,
-    }).collect()
+    sentence_matches
+        .into_iter()
+        .map(
+            |(a_start, a_end, b_start, b_end, similarity)| RepeatedSection {
+                first_start: a_start,
+                first_end: a_end,
+                repeat_start: b_start,
+                repeat_end: b_end,
+                similarity,
+                source: SectionSource::Sentence,
+            },
+        )
+        .collect()
 }
 
 /// Deduplicate text by removing repeated sections. Keeps the first occurrence.
 pub fn deduplicate_text(text: &str, settings: &DedupSettings) -> String {
     let result = check_repetition(text, settings);
-    if !result.repeated || result.sections.is_empty() { return text.to_string(); }
+    if !result.repeated || result.sections.is_empty() {
+        return text.to_string();
+    }
 
     // Sort by repeat start; remove overlaps keeping highest-similarity section.
     let mut sorted = result.sections.clone();
@@ -392,7 +444,9 @@ pub fn deduplicate_text(text: &str, settings: &DedupSettings) -> String {
     for section in sorted {
         if !non_overlapping.iter().any(|s: &RepeatedSection| {
             section.repeat_start < s.repeat_end && section.repeat_end > s.repeat_start
-        }) { non_overlapping.push(section); }
+        }) {
+            non_overlapping.push(section);
+        }
     }
 
     // Remove repeated sections from back to front (preserves indices).
@@ -411,7 +465,9 @@ pub fn deduplicate_text(text: &str, settings: &DedupSettings) -> String {
 /// Check if text has excessive repetition ratio. Returns the fraction of repeated content (0.0-1.0).
 pub fn get_repetition_ratio(text: &str, settings: &DedupSettings) -> f64 {
     let result = check_repetition(text, settings);
-    if !result.repeated || result.sections.is_empty() { return 0.0; }
+    if !result.repeated || result.sections.is_empty() {
+        return 0.0;
+    }
 
     // Deduplicate overlapping sections before summing.
     let mut sorted = result.sections.clone();
@@ -420,10 +476,13 @@ pub fn get_repetition_ratio(text: &str, settings: &DedupSettings) -> f64 {
     for section in sorted {
         if !non_overlapping.iter().any(|s: &RepeatedSection| {
             section.repeat_start < s.repeat_end && section.repeat_end > s.repeat_start
-        }) { non_overlapping.push(section); }
+        }) {
+            non_overlapping.push(section);
+        }
     }
 
-    let total_repeated: usize = non_overlapping.iter()
+    let total_repeated: usize = non_overlapping
+        .iter()
         .map(|s| s.repeat_end.saturating_sub(s.repeat_start))
         .sum();
 
@@ -444,13 +503,21 @@ mod tests {
         let result = check_repetition(text, &DedupSettings::default());
         assert!(result.repeated);
         assert!(!result.sections.is_empty());
-        assert!(result.sections.iter().any(|s| s.source == SectionSource::Ngram));
+        assert!(
+            result
+                .sections
+                .iter()
+                .any(|s| s.source == SectionSource::Ngram)
+        );
     }
 
     #[test]
     fn test_check_repetition_disabled() {
         let text = "repeated repeated repeated";
-        let settings = DedupSettings { enabled: false, ..Default::default() };
+        let settings = DedupSettings {
+            enabled: false,
+            ..Default::default()
+        };
         let result = check_repetition(text, &settings);
         assert!(!result.repeated);
     }
@@ -465,7 +532,10 @@ mod tests {
     #[test]
     fn test_deduplicate_text_removes_repeat() {
         let text = "Unique start. Repeated section here. Repeated section here. Unique end.";
-        let settings = DedupSettings { ngram_similarity_threshold: 0.7, ..Default::default() };
+        let settings = DedupSettings {
+            ngram_similarity_threshold: 0.7,
+            ..Default::default()
+        };
         let result = deduplicate_text(text, &settings);
         assert!(result.len() <= text.len());
         assert!(result.contains("Unique start"));
@@ -477,26 +547,37 @@ mod tests {
         let text = "This repeated section appears multiple times in the text message. \
                     This repeated section appears multiple times in the text message. \
                     Some other unique content to vary the text a bit here.";
-        let settings = DedupSettings { ngram_similarity_threshold: 0.8, ..Default::default() };
+        let settings = DedupSettings {
+            ngram_similarity_threshold: 0.8,
+            ..Default::default()
+        };
         assert!(get_repetition_ratio(text, &settings) > 0.0);
     }
 
     #[test]
     fn test_sentence_pass_detects_rephrasing() {
         let toks = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi";
-        let text = format!("{}. {}. {}. {}.", 
+        let text = format!(
+            "{}. {}. {}. {}.",
             toks,
             "phi upsilon tau sigma rho pi omicron xi nu mu lambda kappa iota theta eta zeta epsilon delta gamma beta alpha",
             "gamma delta beta alpha epsilon zeta eta theta iota lambda kappa mu nu xi omicron pi rho sigma tau upsilon phi",
             "theta iota kappa lambda alpha beta gamma delta epsilon zeta eta mu nu xi omicron pi rho sigma tau upsilon phi"
         );
         let settings = DedupSettings {
-            ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
-            sentence_min_repeat_length: 30, ..Default::default()
+            ngram_similarity_threshold: 0.95,
+            sentence_similarity_threshold: 0.75,
+            sentence_min_repeat_length: 30,
+            ..Default::default()
         };
         let result = check_repetition(&text, &settings);
         assert!(result.repeated);
-        assert!(result.sections.iter().any(|s| s.source == SectionSource::Sentence));
+        assert!(
+            result
+                .sections
+                .iter()
+                .any(|s| s.source == SectionSource::Sentence)
+        );
     }
 
     #[test]
@@ -505,12 +586,20 @@ mod tests {
         let text = "The function handles input validation and sanitizes user-provided data. \
                     This code validates the user's input thoroughly before processing it.";
         let settings = DedupSettings {
-            ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
-            sentence_min_repeat_length: 30, ..Default::default()
+            ngram_similarity_threshold: 0.95,
+            sentence_similarity_threshold: 0.75,
+            sentence_min_repeat_length: 30,
+            ..Default::default()
         };
         // Only one similar pair → insufficient evidence.
         let result = check_repetition(text, &settings);
-        assert!(!result.repeated || !result.sections.iter().any(|s| s.source == SectionSource::Sentence));
+        assert!(
+            !result.repeated
+                || !result
+                    .sections
+                    .iter()
+                    .any(|s| s.source == SectionSource::Sentence)
+        );
     }
 
     #[test]
@@ -519,7 +608,8 @@ mod tests {
         let text = "When reading r docs or examples, prefer the typed helper. \
                     When reading documentation or examples, prefer the typed helper.";
         let settings = DedupSettings {
-            ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
+            ngram_similarity_threshold: 0.95,
+            sentence_similarity_threshold: 0.75,
             ..Default::default()
         };
         let result = check_repetition(text, &settings);
@@ -531,10 +621,14 @@ mod tests {
     fn test_streaming_state_accumulates_ngram_count() {
         let settings = DedupSettings::default();
         let mut state = StreamingState::new(settings.clone());
-        
+
         // Feed identical chunks — each should increment n-gram count.
-        for _ in 0..5 { state.feed_chunk("this is a repeated sentence that keeps getting added to the stream.\n"); }
-        
+        for _ in 0..5 {
+            state.feed_chunk(
+                "this is a repeated sentence that keeps getting added to the stream.\n",
+            );
+        }
+
         // After warmup (we can't easily simulate elapsed time, so we manually check content accumulation).
         assert!(state.content.contains("repeated sentence"));
     }
@@ -542,10 +636,10 @@ mod tests {
     #[test]
     fn test_streaming_reset_clears_state() {
         let mut state = StreamingState::new(DedupSettings::default());
-        
+
         state.feed_chunk("some content here");
         state.reset();
-        
+
         assert!(state.content.is_empty());
         assert_eq!(state.repetition_count, 0);
     }
@@ -555,24 +649,36 @@ mod tests {
         // During warmup (first 3s), feed_chunk returns empty RepetitionCheck even with enough content.
         let settings = DedupSettings::default();
         let mut state = StreamingState::new(settings.clone());
-        
+
         // Feed a large chunk — but it's still within the warmup window.
         let large_content = "x".repeat(1000);
         let result = state.feed_chunk(&large_content);
-        
+
         assert!(!result.repeated, "warmup should suppress all checks");
     }
 
     #[test]
     fn test_determine_action_ngram_accumulates_to_abort() {
-        let mut state = StreamingState::new(DedupSettings { max_repetitions: 2, ..Default::default() });
+        let mut state = StreamingState::new(DedupSettings {
+            max_repetitions: 2,
+            ..Default::default()
+        });
 
         // Warmup gate blocks real accumulation during tests — manually bump repetition_count to simulate sustained n-gram detection.
-        for _ in 0..3 { state.repetition_count += 1; }
+        for _ in 0..3 {
+            state.repetition_count += 1;
+        }
 
-        let check = RepetitionCheck { repeated: true, sections: vec![RepeatedSection {
-            first_start: 0, first_end: 100, repeat_start: 100, repeat_end: 200,
-            similarity: 0.96, source: SectionSource::Ngram }],
+        let check = RepetitionCheck {
+            repeated: true,
+            sections: vec![RepeatedSection {
+                first_start: 0,
+                first_end: 100,
+                repeat_start: 100,
+                repeat_end: 200,
+                similarity: 0.96,
+                source: SectionSource::Ngram,
+            }],
         };
 
         // After enough n-gram confirms (repetition_count=3 >= max_repetitions=2), action should be Abort.
@@ -582,13 +688,22 @@ mod tests {
     #[test]
     fn test_determine_action_sentence_only_never_aborts() {
         let mut state = StreamingState::new(DedupSettings::default());
-        
-        // Even with high repetition count, sentence-only matches should steer not abort.
-        for _ in 0..10 { state.feed_chunk("this is a line of text that gets repeated over and over again across the stream.\n"); }
 
-        let check = RepetitionCheck { repeated: true, sections: vec![RepeatedSection {
-            first_start: 0, first_end: 100, repeat_start: 100, repeat_end: 200,
-            similarity: 0.85, source: SectionSource::Sentence }],
+        // Even with high repetition count, sentence-only matches should steer not abort.
+        for _ in 0..10 {
+            state.feed_chunk("this is a line of text that gets repeated over and over again across the stream.\n");
+        }
+
+        let check = RepetitionCheck {
+            repeated: true,
+            sections: vec![RepeatedSection {
+                first_start: 0,
+                first_end: 100,
+                repeat_start: 100,
+                repeat_end: 200,
+                similarity: 0.85,
+                source: SectionSource::Sentence,
+            }],
         };
 
         // Sentence-only match — must steer (or none if n-gram count is low).
@@ -597,11 +712,21 @@ mod tests {
 
     #[test]
     fn test_determine_action_disabled_returns_none() {
-        let mut state = StreamingState::new(DedupSettings { enabled: false, ..Default::default() });
-        
-        let check = RepetitionCheck { repeated: true, sections: vec![RepeatedSection {
-            first_start: 0, first_end: 100, repeat_start: 100, repeat_end: 200,
-            similarity: 0.96, source: SectionSource::Ngram }],
+        let mut state = StreamingState::new(DedupSettings {
+            enabled: false,
+            ..Default::default()
+        });
+
+        let check = RepetitionCheck {
+            repeated: true,
+            sections: vec![RepeatedSection {
+                first_start: 0,
+                first_end: 100,
+                repeat_start: 100,
+                repeat_end: 200,
+                similarity: 0.96,
+                source: SectionSource::Ngram,
+            }],
         };
 
         assert_eq!(state.determine_action(&check), StreamAction::None);
