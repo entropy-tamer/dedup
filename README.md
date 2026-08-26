@@ -10,6 +10,41 @@ The crate answers three questions about a piece of text:
 
 It is designed to be embedded in inference harnesses and agent runtimes: batch functions for post-hoc analysis of complete messages, and an incremental `StreamingState` monitor that consumes chunks as they arrive during generation.
 
+## Overview
+
+dedup processes text through two independent detection passes whose findings feed a shared action policy:
+
+```mermaid
+flowchart TD
+    subgraph input["Assistant output"]
+        BATCH["Complete message<br/>(batch API)"]
+        STREAM["Text chunks during generation<br/>(streaming monitor)"]
+    end
+
+    STREAM --> G{"Gates"}
+    G -- "warmup / length / delta" --> PASS["Skip analysis<br/>repeated: false"]
+    G -- pass --> ACC["Accumulate content +<br/>update n-gram hashes incrementally"]
+    ACC --> NGRAM
+    BATCH --> NGRAM
+
+    subgraph passes["Detection passes"]
+        NGRAM["N-gram pass<br/>Rabin-Karp rolling hash + Jaccard<br/>strict: threshold 0.95"]
+        SENT["Sentence pass<br/>Jaccard + proximity gating<br/>loose: threshold 0.75, requires corroboration"]
+    end
+
+    NGRAM --> SEC["RepeatedSection[]<br/>source: ngram | sentence"]
+    SENT --> SEC
+
+    SEC --> POLICY{"Action policy"}
+    POLICY -- "sentence-level only" --> STEER["Steer<br/>inject corrective signal,<br/>never aborts"]
+    POLICY -- "n-gram match,<br/>count < max_repetitions" --> STEER
+    POLICY -- "n-gram match,<br/>count >= max_repetitions<br/>or 2+ confirms > 0.9" --> ABORT["Abort<br/>terminate degenerate loop"]
+```
+
+The key asymmetry: only near-exact (n-gram) repetition accumulates toward abort. Sentence-level semantic similarity can steer, but reworded-but-different content never kills a stream.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for full details on each layer, data flow diagrams, and module dependency graphs.
+
 ## Features
 
 - **N-gram pass** — sliding-window n-grams hashed with Rabin-Karp rolling hashes, compared pairwise with Jaccard similarity plus character-level fallback for catches word-level comparison misses
