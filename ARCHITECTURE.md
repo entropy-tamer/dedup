@@ -1,38 +1,37 @@
 # dedup Architecture
 
-Text deduplication for streaming assistant output, implemented in Rust and compiled to WebAssembly. The goal is to replace O(n²) n-gram comparison in TypeScript with a constant-time Rust implementation that runs on the main thread without blocking.
+`dedup` is a text repetition detection engine for streaming LLM output, implemented in Rust with a WebAssembly target for JavaScript hosts. It ships three cooperating layers: near-exact duplicate detection (n-gram), semantic repetition detection (sentence-level), and a streaming state machine that turns detections into an action policy (`none` / `steer` / `abort`) during generation.
 
-## Problem
+## Design Goals
 
-The streaming deduplication system in `packages/coding-agent/src/core/` caused hangs on laptop-class machines:
+- **Incremental over polling.** The streaming monitor consumes chunks as they arrive via `feed_chunk()`. There are no timers on the host side; gating logic lives inside the monitor.
+- **Cheap steady state.** Warmup, content-length, and chunk-delta gates mean normal, non-repetitive output pays almost nothing per chunk.
+- **No false-positive aborts.** Only near-exact (n-gram) repetition accumulates toward abort. Sentence-level semantic similarity can steer but never terminates a stream — reworded-but-different content ("r docs" vs "documentation") is never fatal.
+- **Host-agnostic core.** The algorithms are pure Rust with no I/O; the WASM boundary is a thin export surface over the same code paths tested natively.
 
-- **O(n²)** n-gram comparison in `checkRepetition()`
-- Repeated tokenization and Jaccard computation every check interval (500ms via `setInterval`)
-- String-heavy operations blocking the main thread during generation
-- No incremental computation — full re-analysis each time
-
-## Three-Layer Defense Architecture
+## Three-Layer Detection
 
 ### Layer 1: In-Turn Text Deduplication (`deduplicate.rs`)
 
-Detects when the model repeats itself within a single message. This handles the "the same paragraph twice" problem — identical or near-identical text appearing multiple times in one response.
+Detects when a model repeats itself within a single message — identical or near-identical text appearing multiple times in one response.
 
-**Algorithm (two-pass):**
-1. **N-gram pass**: Sliding window over text, compute n-grams at configurable step size, hash each with Rabin-Karp rolling hash (`ngram.rs`). Compare pairs within the same pass using Jaccard similarity on tokenized output + character-level similarity for catches that word-level comparison misses (e.g., reworded but structurally identical sentences).
-2. **Sentence pass**: Split text into sentences, compute Jaccard over tokenized sentence pairs with proximity gating (gap > `contextGapMax` chars → contextual variation, not a loop). Requires corroborating evidence: ≥2 similar pairs OR one very strong pair (>0.9 similarity) confirmed by n-gram pass.
+**Two-pass algorithm:**
 
-**Why two passes:** The n-gram pass is strict (threshold 0.95 default) and catches near-exact duplicates fast. The sentence pass is looser (threshold 0.75) but requires corroboration so legitimate rephrasing like "r docs" vs "documentation" never triggers a false-positive abort.
+1. **N-gram pass**: sliding window over the text, n-grams computed at configurable step size and hashed with Rabin-Karp rolling hash (`ngram.rs`). Window pairs are compared within the pass using Jaccard similarity on tokenized output (`similarity.rs`), plus character-level similarity as a fallback that catches word-level misses (reworded but structurally identical sentences).
+2. **Sentence pass**: text split into sentences (`split_sentences.rs`, `sentence.rs`); Jaccard similarity over tokenized sentence pairs with proximity gating — gaps larger than `context_gap_max` indicate contextual variation rather than a loop. The sentence pass requires corroboration: at least two similar pairs, or one very strong pair (> 0.9 similarity) confirmed by the n-gram pass.
 
-### Layer 2: Streaming Orchestration (`deduplicate.rs` — `StreamingState`)
+**Why two passes:** the n-gram pass is strict (default threshold 0.95) and catches near-exact duplicates fast. The sentence pass is looser (0.75) but requires corroboration, so legitimate rephrasing never triggers an abort.
 
-Incremental state machine for real-time detection during generation. Replaces the old TS timer-polling approach with Rust-native gating that runs inside each chunk's processing pipeline.
+### Layer 2: Streaming Orchestration (`StreamingState`)
+
+An incremental state machine for real-time detection during generation. Each output chunk passes through `feed_chunk()`, which applies gates internally before running analysis.
 
 ```mermaid
 classDiagram
     class StreamingState {
         -DedupSettings settings
         +content String
-        +ngram_hashes Vec<u64>
+        +ngram_hashes Vec~u64~
         +last_check_end usize
         +repetition_count usize
         +new(DedupSettings) Self
@@ -54,7 +53,7 @@ classDiagram
 
     class RepetitionCheck {
         +repeated bool
-        +sections Vec<RepeatedSection>
+        +sections Vec~RepeatedSection~
     }
 
     class RepeatedSection {
@@ -68,14 +67,15 @@ classDiagram
 
     class SectionSource {
         <<enum>>
-        +ngram int
-        +sentence int
+        Ngram
+        Sentence
     }
+
     class StreamAction {
         <<enum>>
-        +None int
-        +Steer int
-        +Abort int
+        None
+        Steer
+        Abort
     }
 
     StreamingState --> DedupSettings : uses
@@ -87,11 +87,13 @@ classDiagram
 
 | Gate | Condition | Effect |
 |------|-----------|--------|
-| Warmup (non-WASM) | First 3 seconds of content accumulation | Suppresses all checks |
-| Content length | Total accumulated text < `min_repeat_length * 8` (~400 chars) | Returns empty check without analysis |
-| Chunk delta | No new characters arrived since last check | Prevents rapid-fire re-checking on tiny chunks |
+| Warmup (native builds only) | First ~3 seconds of content accumulation | Suppresses all checks |
+| Content length | Total accumulated text < `min_repeat_length * 8` (~400 chars default) | Returns empty check without analysis |
+| Chunk delta | No new characters since last check | Prevents rapid-fire re-checking on tiny chunks |
 
-**Action determination logic:**
+### Layer 3: Action Determination
+
+After each check, `determine_action()` classifies the stream state:
 
 ```mermaid
 flowchart TD
@@ -99,11 +101,14 @@ flowchart TD
     B -- no --> C[STEER<br/>sentence-level semantic match only]
     B -- yes --> D{repetition_count >= max_repetitions?}
     D -- yes --> E[ABORT]
-    D -- no --> F{>=2 strong n-gram confirms? similarity > 0.9}
+    D -- no --> F{>=2 strong n-gram confirms?<br/>similarity > 0.9}
     F -- yes --> E
     F -- no --> C
-
 ```
+
+- **None** — keep streaming normally
+- **Steer** — inject a corrective signal; used for sentence-level matches so soft signals cannot kill a stream
+- **Abort** — terminate; reserved for confirmed near-exact loops
 
 ## Module Dependency Graph
 
@@ -112,9 +117,9 @@ graph LR
     A[tokenize.rs] --> B[deduplicate.rs]
     C[ngram.rs<br/>Rabin-Karp hashing] --> B
     D[similarity.rs<br/>Jaccard + char-n-gram] --> B
-    E[split_sentences.rs] --> B
+    E[sentence.rs / split_sentences.rs] --> B
     B --> F[presets.rs]
-    H[lib.rs<br/>WASM exports] --> A
+    H[lib.rs<br/>public API + WASM exports] --> A
     H --> C
     H --> D
     H --> E
@@ -122,55 +127,55 @@ graph LR
     H --> F
 ```
 
-## WASM Export Surface
+## Public API Surface
 
-All public functions are exported via `wasm-bindgen` and callable from TypeScript:
+Native callers use the functions directly; WASM exports mirror them via wasm-bindgen.
 
-| Rust Function | WASM Export | JS Signature |
-|---------------|-------------|--------------|
-| `check_repetition(text, settings)` | `dedup_check_repetition` | `(text, settingsJson) => {repeated, sections[]}` |
-| `deduplicate_text(text, settings)` | `dedup_deduplicate_text` | `(text, settingsJson) => string` |
-| `get_repetition_ratio(text, settings)` | `dedup_get_repetition_ratio` | `(text, settingsJson) => number` |
-| `jaccard_similarity(tokens_a, tokens_b)` | `dedup_jaccard_similarity` | `(tokensA, tokensB) => number` |
-| `tokenize(text)` | `dedup_tokenize` | `(text) => string[]` |
-| `resolve_dedup_preset(name)` | `dedup_resolve_preset` | `(name) => DedupSettings JSON` |
+| Function | Purpose |
+|----------|---------|
+| `check_repetition(text, settings)` | Two-pass check → `{repeated, sections}` |
+| `deduplicate_text(text, settings)` | Remove repeated sections from text |
+| `get_repetition_ratio(text, settings)` | Ratio of repetitive content, 0.0–1.0 |
+| `jaccard_similarity(tokens_a, tokens_b)` | Token-set similarity |
+| `tokenize(text)` | Shared tokenizer |
+| `resolve_dedup_preset(name)` | Named preset → `DedupSettings` |
+| `StreamingState::new / feed_chunk / determine_action` | Incremental streaming monitor |
 
 ## Cross-Module Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant TS as TypeScript (coding-agent)
-    participant WASM as Rust/WASM
-    participant Ngram as ngram.rs (rolling hash)
+    participant Host as Host harness
+    participant Lib as dedup (Rust/WASM)
+    participant Ngram as ngram.rs
     participant Sim as similarity.rs
 
-    Note over TS,WASM: In-Turn Deduplication
-    TS->>WASM: checkRepetition(text, settingsJSON)
-    WASM->>Ngram: compute_ngrams_hashes(content)
-    Ngram-->>WASM: hash values per n-gram window
-    loop for each pair of windows
-        WASM->>Sim: jaccard_similarity(aTokens, bTokens)
-        Sim-->>WASM: float similarity
+    Note over Host,Lib: Batch — in-turn deduplication
+    Host->>Lib: check_repetition(text, settings)
+    Lib->>Ngram: compute_ngram_hashes(content)
+    Ngram-->>Lib: hash per window
+    loop each window pair
+        Lib->>Sim: jaccard_similarity(aTokens, bTokens)
+        Sim-->>Lib: similarity float
     end
-    Note over WASM: also char-n-gram comparison
-    WASM-->>TS: {repeated, sections[]}
+    Note over Lib: also char-n-gram comparison
+    Lib-->>Host: {repeated, sections[]}
 
-    Note over TS,WASM: Streaming Orchestration (per chunk)
-    TS->>WASM: streamingDedup.feedChunk(chunk)
-    WASM->>WASM: gate checks (warmup/length/delta)
+    Note over Host,Lib: Streaming — per chunk
+    Host->>Lib: StreamingState::feed_chunk(chunk)
+    Lib->>Lib: gate checks (warmup / length / delta)
     alt gated out
-        WASM-->>TS: {repeated:false, sections:[]}
-    else passes gates
-        WASM->>Ngram: update n-gram hashes incrementally
-        WASM->>Sim: full comparison on accumulated content
-        Note over WASM: only n-gram matches<br/>count toward abort threshold
+        Lib-->>Host: {repeated: false, sections: []}
+    else gates passed
+        Lib->>Ngram: update hashes incrementally
+        Lib->>Sim: full comparison on accumulated content
+        Note over Lib: only n-gram matches count toward abort
     end
-
 ```
 
 ## Preset Resolution
 
-Three presets with specific parameter overrides — defaults are applied first, then the preset's override map is merged in:
+Presets apply defaults first, then merge a named override map:
 
 | Preset | N-Gram Threshold | Sentence Threshold | Window Size | Step Size | Min Repeat Length | Max Repetitions |
 |--------|------------------|-------------------|-------------|-----------|-------------------|-----------------|
@@ -178,36 +183,31 @@ Three presets with specific parameter overrides — defaults are applied first, 
 | relaxed | 0.92 | 0.75 | 100 | 15 | 80 | 3 |
 | sensitive | 0.95 | 0.75 | 100 | 3 | 30 | 3 |
 
-When only `similarityThreshold` is set (legacy API), both n-gram and sentence thresholds are populated from it, matching the TS semantics.
+For compatibility, setting only a single `similarity_threshold` populates both n-gram and sentence thresholds from it.
 
-## WASM Binary Size
+## Binary Size
 
 | Metric | Value |
 |--------|-------|
 | Raw `.wasm` size | ~1.5 MB |
 | Gzipped size | ~402 KB |
-| Target (original) | < 250 KB gzipped |
 
-The binary is larger than the original target because it includes all three layers plus serde serialization/deserialization for JSON interop with TypeScript. Optimization candidates: strip debug symbols, enable `lto = "thin"`, or remove unused features from serde/wasm-bindgen dependencies.
+The binary includes all three layers plus serde serialization for JSON interop. Optimization candidates: strip debug symbols, remove unused serde/wasm-bindgen features. Release profiles already use `opt-level = "z"`, `lto = true`, `panic = "abort"`, `codegen-units = 1`.
 
-## Hard-Won Lessons (from Phase 0–5)
+## WASM Portability Notes
 
-1. **`std::time::Instant` is not available on wasm32-unknown-unknown**. The warmup gate in Rust uses it — must be gated behind `#[cfg(not(target_arch = "wasm32"))]`. This was the root cause of a panic when WASM tried to create the streaming state.
+Practical constraints discovered while building the wasm32 target — relevant to anyone embedding or rebuilding the module:
 
-2. **`getrandom` requires the `wasm_js` feature** for random hashing in ahash/RandomState on wasm32. Added as a target-specific dependency: `{ git = "https://git.sly.so/kade/getrandom", features = ["wasm_js"] }`. This creates a version conflict with kade's fork of wasm-bindgen — resolved by pointing both to the same git commit.
+1. **`std::time::Instant` is unavailable on `wasm32-unknown-unknown`.** The warmup gate uses it, so it is gated behind `#[cfg(not(target_arch = "wasm32"))]`.
+2. **`getrandom` requires the `wasm_js` feature** for random hash seeding (ahash `RandomState`) on wasm32. It is declared as a target-specific dependency. Both serde forks and wasm-bindgen must point at compatible revisions to avoid version conflicts in the workspace lockfile.
+3. **String marshaling uses pointer/length pairs plus malloc/free**, handled by `__wbindgen_malloc`, `__wbindgen_realloc`, and `__wbindgen_free` — no generated glue needed at runtime if the host implements these helpers directly (see the r bridge package for a reference implementation).
+4. **Externref table initialization** requires a 4-slot grow with `(undefined, null, true, false)` so error values can cross the FFI boundary via `takeFromExternrefTable(idx)`.
+5. **Import names must match exactly.** `__wbg___wbindgen_throw_*` needs the `__wbg_` prefix; WebAssembly resolves imports by exact string match.
+6. **`getRandomValues` import** feeds ahash seeding: `(bufPtr, bufLen) => crypto.getRandomValues(memory.subarray(bufPtr >>> 0, bufLen))`, called with two separate i32 parameters.
+7. **`__wbindgen_start()` must be called after instantiation** to finalize externref table setup; error throwing across the boundary misbehaves otherwise.
 
-3. **`HashSet` iteration order is not deterministic**. Tokenize returns different JSON array orders on repeated calls for identical input. Always sort token arrays before asserting equality in tests.
+Testing note: `HashSet` iteration order is not deterministic across calls — sort token arrays before asserting equality in tests.
 
-4. **Only n-gram (near-exact) sections count toward abort threshold**. Sentence-level semantic matches steer but never accumulate to abort — this prevents the classic "r docs" vs "documentation" false positive from killing streams.
+## Integration
 
-5. **WASM FFI uses pointer/length + malloc/free**, not direct value passing. String marshaling between JS and WASM memory is handled by `__wbindgen_malloc`, `__wbindgen_realloc`, `__wbindgen_free` (the glue code generated by wasm-bindgen).
-
-6. **Externref table initialization** requires a specific setup in the loader — 4-slot grow with `(undefined, null, true, false)` pattern so error values can be thrown across FFI boundaries via `takeFromExternrefTable(idx)`.
-
-7. **WASM imports must match exact names from the binary**. The import `__wbg___wbindgen_throw_9c75d47bf9e7731e` needs a triple-underscore prefix (`__wbg_`) — matching exactly what wasm-bindgen generates in `_bg.wasm`. Using `__wbindgen_throw_*` without the `__wbg_` prefix fails with "function import requires a callable" because WebAssembly resolves imports by exact string match.
-
-8. **WASM `getRandomValues` import** is needed for ahash's RandomState on wasm32 (random number seeding). Provide it via: `(bufPtr, bufLen) => { crypto.getRandomValues(memory.subarray(bufPtr >>> 0, bufLen)); }`. Must be called with the buffer range as two separate i32 parameters.
-
-9. **`__wbindgen_cast_0000000000000001` cast intrinsic** for `Ref(String) → Externref`: takes a pointer + length pair, decodes from UTF-8, returns the JS string as an externref table slot.
-
-10. **WASM module initialization requires calling `__wbindgen_start()`** after creating the Instance to finalize externref table setup. Without this call, error throwing across FFI boundaries may not work correctly.
+The canonical consumer integration lives in the [r](https://git.sly.so/kade/r) monorepo: `packages/dedup-wasm` (JS bridge package) and `packages/coding-agent/src/core/{deduplication,stream-deduplication,loop-detection}.ts` (harness wiring). See [INTEGRATION.md](./INTEGRATION.md) for the full guide, including porting steps for other harnesses such as Codex and Claude Code.
