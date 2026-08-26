@@ -30,10 +30,28 @@ use wasm_bindgen::prelude::*;
 
 fn default_warmup_ms() -> u64 { 3000 }
 
+fn default_wasm_dedup_settings() -> WasmDedupSettings {
+    WasmDedupSettings {
+        enabled: true,
+        ngram_similarity_threshold: 0.95,
+        sentence_similarity_threshold: 0.75,
+        sentence_min_repeat_length: 80,
+        context_gap_max: 300,
+        window_size: 100,
+        step_size: 25,
+        min_repeat_length: 50,
+        max_repetitions: 3,
+        warmup_ms: default_warmup_ms(),
+    }
+}
+
 // ── WASM-exported types ─────────────────────────────────────────────
 
+/// WASM mirror of `DedupSettings`. All fields default via `DedupSettings::default()`
+/// equivalents so partial JSON deserializes (see deduplicate.rs `DedupSettings`).
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default = "default_wasm_dedup_settings")]
 pub struct WasmDedupSettings {
     pub enabled: bool,
     pub ngram_similarity_threshold: f64,

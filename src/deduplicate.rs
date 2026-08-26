@@ -15,7 +15,11 @@ use serde::{Deserialize, Serialize};
 // ── Settings ────────────────────────────────────────────────────────
 
 /// Configuration for deduplication.
+///
+/// All fields have serde defaults matching `DedupSettings::default()` so that
+/// partial JSON (e.g. `{"enabled":true}`) deserializes instead of hard-failing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DedupSettings {
     pub enabled: bool,
     pub ngram_similarity_threshold: f64,
@@ -26,10 +30,8 @@ pub struct DedupSettings {
     pub step_size: usize,
     pub min_repeat_length: usize,
     /// Number of consecutive near-identical (n-gram) section detections before aborting the stream. Default 3.
-    #[serde(default = "default_max_repetitions")]
     pub max_repetitions: usize,
     /// Warmup window in milliseconds before repetition checks begin. Default 3000.
-    #[serde(default = "default_warmup_ms")]
     pub warmup_ms: u64,
 }
 
