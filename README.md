@@ -140,7 +140,8 @@ Note: dependencies are pinned to forks on `git.sly.so` (serde, wasm-bindgen, aha
 | Operation | Complexity | Typical latency (10 KB text) |
 |-----------|------------|------------------------------|
 | N-gram comparison | O(n² / step_size) per pass | < 5 ms native |
-| Streaming `feed_chunk()` | Incremental — only new content re-analyzed | ~2 ms per chunk at streaming rate |
+| Streaming `feed_chunk()` | Gated re-analysis, not algorithmically incremental | ~2 ms per chunk at streaming rate |
+| N-gram worst case (long repetitive stream) | O(n² / step_size) on accumulated length | Spikes on pathological inputs — gating keeps steady-state near zero |
 
 Gating keeps steady-state cost near zero during normal generation:
 
