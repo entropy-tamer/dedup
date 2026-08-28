@@ -181,7 +181,7 @@ Presets apply defaults first, then merge a named override map:
 |--------|------------------|-------------------|-------------|-----------|-------------------|-----------------|
 | default | 0.95 | 0.75 | 100 | 25 | 50 | 3 |
 | relaxed | 0.92 | 0.75 | 100 | 15 | 80 | 3 |
-| sensitive | 0.95 | 0.75 | 100 | 3 | 30 | 3 |
+| sensitive | 0.75 | 0.75 | 100 | 3 | 30 | 3 |
 
 For compatibility, setting only a single `similarity_threshold` populates both n-gram and sentence thresholds from it.
 

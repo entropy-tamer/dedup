@@ -103,7 +103,7 @@ let settings = resolve_dedup_preset(DedupPresetName::Relaxed);
 |--------|------------------|-------------------|-------------|-----------|-------------------|-----------------|
 | default | 0.95 | 0.75 | 100 | 25 | 50 | 3 |
 | relaxed | 0.92 | 0.75 | 100 | 15 | 80 | 3 |
-| sensitive | 0.95 | 0.75 | 100 | 3 | 30 | 3 |
+| sensitive | 0.75 | 0.75 | 100 | 3 | 30 | 3 |
 
 ## JavaScript / WASM usage
 
