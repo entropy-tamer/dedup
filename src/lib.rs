@@ -5,30 +5,37 @@
 //! cross-turn loop detection (behind a feature flag), and a streaming state machine with
 //! time-based gating and action determination.
 
+mod deduplicate;
 mod ngram;
+pub mod presets;
+mod sentence;
 mod similarity;
 mod tokenize;
-mod sentence;
-mod deduplicate;
-pub mod presets;
-
 
 // ── Re-exports from sub-modules (for use by TS wrapper) ─────────────
 
 pub use deduplicate::{
-    check_repetition, deduplicate_text, get_repetition_ratio,
-    DedupSettings, RepeatedSection as RustRepeatedSection, RepetitionCheck as RustRepetitionCheck, SectionSource,
-    StreamAction, StreamingState,
+    DedupSettings, RepeatedSection as RustRepeatedSection, RepetitionCheck as RustRepetitionCheck,
+    SectionSource, StreamAction, StreamingState, check_repetition, deduplicate_text,
+    get_repetition_ratio,
 };
-pub use ngram::{compute_ngram_hashes, compute_ngram_strings, find_hash_matches, NgramHasher};
-pub use similarity::{jaccard_similarity, char_ngram_similarity};
-pub use tokenize::{tokenize, TokenSet};
+pub use ngram::{NgramHasher, compute_ngram_hashes, compute_ngram_strings, find_hash_matches};
 pub use sentence::split_sentences;
+pub use similarity::{char_ngram_similarity, jaccard_similarity};
+pub use tokenize::{TokenSet, tokenize};
 
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-fn default_warmup_ms() -> u64 { 3000 }
+fn default_warmup_ms() -> u64 {
+    3000
+}
+
+/// Minimum number of new bytes that must accumulate before a streamed check
+/// re-runs the full scan. See `StreamingDedupMonitor::min_check_interval_bytes`.
+fn default_min_check_interval_bytes() -> usize {
+    512
+}
 
 fn default_wasm_dedup_settings() -> WasmDedupSettings {
     WasmDedupSettings {
@@ -42,6 +49,7 @@ fn default_wasm_dedup_settings() -> WasmDedupSettings {
         min_repeat_length: 50,
         max_repetitions: 3,
         warmup_ms: default_warmup_ms(),
+        min_check_interval_bytes: default_min_check_interval_bytes(),
     }
 }
 
@@ -64,6 +72,9 @@ pub struct WasmDedupSettings {
     pub max_repetitions: usize,
     #[serde(default = "default_warmup_ms")]
     pub warmup_ms: u64,
+    /// Minimum new bytes between streamed checks. `0` disables the gate.
+    #[serde(default = "default_min_check_interval_bytes")]
+    pub min_check_interval_bytes: usize,
 }
 
 #[wasm_bindgen]
@@ -80,17 +91,29 @@ pub struct WasmRepeatedSection {
 #[wasm_bindgen]
 impl WasmRepeatedSection {
     #[wasm_bindgen(getter)]
-    pub fn first_start(&self) -> usize { self.first_start }
+    pub fn first_start(&self) -> usize {
+        self.first_start
+    }
     #[wasm_bindgen(getter)]
-    pub fn first_end(&self) -> usize { self.first_end }
+    pub fn first_end(&self) -> usize {
+        self.first_end
+    }
     #[wasm_bindgen(getter)]
-    pub fn repeat_start(&self) -> usize { self.repeat_start }
+    pub fn repeat_start(&self) -> usize {
+        self.repeat_start
+    }
     #[wasm_bindgen(getter)]
-    pub fn repeat_end(&self) -> usize { self.repeat_end }
+    pub fn repeat_end(&self) -> usize {
+        self.repeat_end
+    }
     #[wasm_bindgen(getter)]
-    pub fn similarity(&self) -> f64 { self.similarity }
+    pub fn similarity(&self) -> f64 {
+        self.similarity
+    }
     #[wasm_bindgen(getter)]
-    pub fn source(&self) -> String { self.source.clone() }
+    pub fn source(&self) -> String {
+        self.source.clone()
+    }
 }
 
 #[wasm_bindgen]
@@ -103,9 +126,13 @@ pub struct WasmRepetitionCheck {
 #[wasm_bindgen]
 impl WasmRepetitionCheck {
     #[wasm_bindgen(getter)]
-    pub fn repeated(&self) -> bool { self.repeated }
+    pub fn repeated(&self) -> bool {
+        self.repeated
+    }
     #[wasm_bindgen(getter)]
-    pub fn sections(&self) -> Vec<WasmRepeatedSection> { self.sections.clone() }
+    pub fn sections(&self) -> Vec<WasmRepeatedSection> {
+        self.sections.clone()
+    }
 }
 
 // ── Streaming state (WASM wrapper) ───────────────────────────────────
@@ -232,6 +259,7 @@ impl From<WasmDedupSettings> for DedupSettings {
             window_size: w.window_size,
             step_size: w.step_size,
             min_repeat_length: w.min_repeat_length,
+            min_check_interval_bytes: w.min_check_interval_bytes,
             max_repetitions: w.max_repetitions,
             warmup_ms: w.warmup_ms,
         }
@@ -240,15 +268,26 @@ impl From<WasmDedupSettings> for DedupSettings {
 
 impl From<RustRepetitionCheck> for WasmRepetitionCheck {
     fn from(r: RustRepetitionCheck) -> Self {
-        let sections = r.sections.into_iter()
+        let sections = r
+            .sections
+            .into_iter()
             .map(|s| WasmRepeatedSection {
-                first_start: s.first_start, first_end: s.first_end,
-                repeat_start: s.repeat_start, repeat_end: s.repeat_end,
+                first_start: s.first_start,
+                first_end: s.first_end,
+                repeat_start: s.repeat_start,
+                repeat_end: s.repeat_end,
                 similarity: s.similarity,
-                source: match s.source { SectionSource::Ngram => "ngram".into(), _ => "sentence".into() },
-            }).collect();
+                source: match s.source {
+                    SectionSource::Ngram => "ngram".into(),
+                    _ => "sentence".into(),
+                },
+            })
+            .collect();
 
-        WasmRepetitionCheck { repeated: r.repeated, sections }
+        WasmRepetitionCheck {
+            repeated: r.repeated,
+            sections,
+        }
     }
 }
 
@@ -261,21 +300,37 @@ mod tests {
     #[test]
     fn test_wasm_settings_conversion() {
         let wasm = WasmDedupSettings {
-            enabled: true, ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
-            sentence_min_repeat_length: 80, context_gap_max: 300, window_size: 100,
-            step_size: 25, min_repeat_length: 50, max_repetitions: 3, warmup_ms: 3000,
+            enabled: true,
+            ngram_similarity_threshold: 0.95,
+            sentence_similarity_threshold: 0.75,
+            sentence_min_repeat_length: 80,
+            context_gap_max: 300,
+            window_size: 100,
+            step_size: 25,
+            min_repeat_length: 50,
+            max_repetitions: 3,
+            warmup_ms: 3000,
+            min_check_interval_bytes: 512,
         };
         let settings: DedupSettings = wasm.into();
-        assert_eq!(settings.enabled, true);
+        assert!(settings.enabled);
         assert_eq!(settings.max_repetitions, 3);
     }
 
     #[test]
     fn test_streaming_dedup_creation() {
         let settings = WasmDedupSettings {
-            enabled: true, ngram_similarity_threshold: 0.95, sentence_similarity_threshold: 0.75,
-            sentence_min_repeat_length: 80, context_gap_max: 300, window_size: 100,
-            step_size: 25, min_repeat_length: 50, max_repetitions: 3, warmup_ms: 3000,
+            enabled: true,
+            ngram_similarity_threshold: 0.95,
+            sentence_similarity_threshold: 0.75,
+            sentence_min_repeat_length: 80,
+            context_gap_max: 300,
+            window_size: 100,
+            step_size: 25,
+            min_repeat_length: 50,
+            max_repetitions: 3,
+            warmup_ms: 3000,
+            min_check_interval_bytes: 512,
         };
         let json = serde_json::to_string(&settings).unwrap();
         let mut dedup = StreamingDedup::new(&json).unwrap();
@@ -304,8 +359,10 @@ mod tests {
     fn test_wasm_tokenize_identity() {
         // Tokenize returns a JSON array — order may differ due to HashSet iteration,
         // so compare sorted token lists instead.
-        let tokens_a: Vec<String> = serde_json::from_str(&dedup_tokenize("the cat sat on the mat").unwrap()).unwrap();
-        let tokens_b: Vec<String> = serde_json::from_str(&dedup_tokenize("the cat sat on the mat").unwrap()).unwrap();
+        let tokens_a: Vec<String> =
+            serde_json::from_str(&dedup_tokenize("the cat sat on the mat").unwrap()).unwrap();
+        let tokens_b: Vec<String> =
+            serde_json::from_str(&dedup_tokenize("the cat sat on the mat").unwrap()).unwrap();
         let mut sa = tokens_a.clone();
         sa.sort();
         let mut sb = tokens_b.clone();
@@ -313,23 +370,29 @@ mod tests {
         assert_eq!(sa, sb); /* same tokens regardless of HashSet iteration order */
     }
 
-
-
     #[test]
     fn scenario_g_verbatim_repetition_detected() {
         let repeated_block = "The configuration system loads settings from a layered set of sources, \
                               merging them in a strict priority order that determines the final resolved values.";
-        let loop_text = format!("{}\n\n{}\n\n{}", repeated_block, repeated_block, repeated_block);
+        let loop_text = format!(
+            "{}\n\n{}\n\n{}",
+            repeated_block, repeated_block, repeated_block
+        );
 
         let settings = DedupSettings::default();
         let result = check_repetition(&loop_text, &settings);
 
-        assert!(result.repeated,
-            "verbatim repetition must be detected but got no match");
+        assert!(
+            result.repeated,
+            "verbatim repetition must be detected but got no match"
+        );
         // Verify the detected sections have high similarity (near-exact copy).
         for s in &result.sections {
-            assert!((s.similarity - 1.0).abs() < 1e-6, 
-                "Expected near-perfect similarity for verbatim repetition, got {:.4}", s.similarity);
+            assert!(
+                (s.similarity - 1.0).abs() < 1e-6,
+                "Expected near-perfect similarity for verbatim repetition, got {:.4}",
+                s.similarity
+            );
         }
     }
 
@@ -342,10 +405,11 @@ mod tests {
         let settings = DedupSettings::default();
         let result = check_repetition(text, &settings);
 
-        assert!(!result.repeated,
-            "reworded content must NOT be flagged as repetition (the 'r docs' regression)");
+        assert!(
+            !result.repeated,
+            "reworded content must NOT be flagged as repetition (the 'r docs' regression)"
+        );
     }
 }
 
 // ── Helpers (private) ────────────────────────────────────────────────
-

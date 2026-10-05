@@ -133,7 +133,7 @@ wasm-bindgen target/wasm32-unknown-unknown/release/dedup_wasm.wasm \
   --out-dir pkg --target nodejs
 ```
 
-Note: dependencies are pinned to forks on `git.sly.so` (serde, wasm-bindgen, ahash, memchr, regex). The `getrandom` wasm32 dependency requires the `wasm_js` feature; see [ARCHITECTURE.md](./ARCHITECTURE.md#wasm-portability-notes) for details.
+Note: dependencies are pinned to forks on `git.sly.so` (serde, serde_json, wasm-bindgen, ahash, regex, once_cell). The `getrandom` wasm32 dependency requires the `wasm_js` feature; see [ARCHITECTURE.md](./ARCHITECTURE.md#wasm-portability-notes) for details.
 
 ## Performance characteristics
 
@@ -168,8 +168,7 @@ src/
   deduplicate.rs   Two-pass detection + StreamingState monitor
   ngram.rs         Rabin-Karp rolling-hash n-gram extraction
   similarity.rs    Jaccard token similarity + character n-gram fallback
-  split_sentences.rs  Sentence segmentation
-  sentence.rs      Sentence-pass analysis
+  sentence.rs      Sentence segmentation + sentence-pass analysis
   tokenize.rs      Tokenization shared by all passes
   presets.rs       Named preset resolution
 test/

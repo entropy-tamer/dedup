@@ -24,17 +24,11 @@ struct DedupOverrides {
 }
 
 impl DedupOverrides {
-    const fn none() -> Self {
-        Self {
-            ngram_similarity_threshold: None,
-            sentence_similarity_threshold: None,
-            step_size: None,
-            min_repeat_length: None,
-        }
-    }
-
     /// Apply overrides onto a base `DedupSettings`. Returns new settings.
-    pub fn apply(&self, mut base: super::deduplicate::DedupSettings) -> super::deduplicate::DedupSettings {
+    pub fn apply(
+        &self,
+        mut base: super::deduplicate::DedupSettings,
+    ) -> super::deduplicate::DedupSettings {
         if let Some(v) = self.ngram_similarity_threshold {
             base.ngram_similarity_threshold = v;
         }

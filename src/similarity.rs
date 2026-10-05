@@ -1,14 +1,13 @@
 //! Similarity computations: Jaccard and character n-gram.
 
 use ahash::AHashSet;
-use std::collections::HashSet;
 
 /// Token set type using ahash for performance.
 pub type TokenSet = AHashSet<String>;
 
 /// Compute Jaccard similarity between two token sets.
 ///
-/// Jaccard = |A �� B| / |A �� B|
+/// Jaccard = |A INTERSECTION B| / |A UNION B|
 /// Early exit optimization: if intersection/union ratio can't reach threshold,
 /// we could stop early, but we compute exactly for now.
 pub fn jaccard_similarity(a: &TokenSet, b: &TokenSet) -> f64 {
@@ -31,42 +30,6 @@ pub fn jaccard_similarity(a: &TokenSet, b: &TokenSet) -> f64 {
 
     let union = a.len() + b.len() - intersection;
     intersection as f64 / union as f64
-}
-
-/// Compute Jaccard similarity with early exit threshold.
-///
-/// Returns `None` if similarity definitely below threshold, `Some(score)` otherwise.
-pub fn jaccard_similarity_thresholded(a: &TokenSet, b: &TokenSet, threshold: f64) -> Option<f64> {
-    if a.is_empty() && b.is_empty() {
-        return Some(1.0);
-    }
-    if a.is_empty() || b.is_empty() {
-        return if threshold <= 0.0 { Some(0.0) } else { None };
-    }
-
-    let (smaller, larger) = if a.len() <= b.len() { (a, b) } else { (b, a) };
-
-    let mut intersection = 0;
-    let min_intersection_needed = (threshold * (a.len() + b.len()) as f64 / (1.0 + threshold)).ceil() as usize;
-
-    for token in smaller {
-        if larger.contains(token) {
-            intersection += 1;
-            if intersection >= min_intersection_needed {
-                // Early exit: we know similarity will exceed threshold
-                let union = a.len() + b.len() - intersection;
-                return Some(intersection as f64 / union as f64);
-            }
-        }
-    }
-
-    let union = a.len() + b.len() - intersection;
-    let similarity = intersection as f64 / union as f64;
-    if similarity >= threshold {
-        Some(similarity)
-    } else {
-        None
-    }
 }
 
 /// Compute character n-gram similarity between two strings.
@@ -99,8 +62,6 @@ fn char_ngram_set(text: &str, ngram_size: usize) -> TokenSet {
     set
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,7 +71,7 @@ mod tests {
         let mut a = TokenSet::new();
         a.insert("hello".to_string());
         a.insert("world".to_string());
-        let mut b = a.clone();
+        let b = a.clone();
         assert_eq!(jaccard_similarity(&a, &b), 1.0);
     }
 
@@ -154,7 +115,7 @@ mod tests {
     #[test]
     fn test_char_ngram_different() {
         let a = "hello world";
-        let b = "hello moon";  // Shares some 4-char n-grams
+        let b = "hello moon"; // Shares some 4-char n-grams
         let sim = char_ngram_similarity(a, b, 4);
         assert!(sim < 1.0);
         assert!(sim > 0.0);
@@ -165,18 +126,5 @@ mod tests {
         let a = "hi";
         let b = "hi";
         assert_eq!(char_ngram_similarity(a, b, 4), 1.0);
-    }
-
-    #[test]
-    fn test_jaccard_thresholded() {
-        let mut a = TokenSet::new();
-        a.insert("a".to_string());
-        a.insert("b".to_string());
-        let mut b = TokenSet::new();
-        b.insert("a".to_string());
-        b.insert("c".to_string());
-        // similarity = 1/3 = 0.33
-        assert!(jaccard_similarity_thresholded(&a, &b, 0.5).is_none());
-        assert!(jaccard_similarity_thresholded(&a, &b, 0.3).is_some());
     }
 }

@@ -19,7 +19,6 @@ serde = { git = "https://git.sly.so/kade/serde", package = "serde", features = [
 serde_json = { git = "https://git.sly.so/kade/serde_json" }
 wasm-bindgen = { git = "https://git.sly.so/kade/wasm-bindgen", package = "wasm-bindgen" }
 ahash = { git = "https://git.sly.so/kade/ahash", package = "ahash", version = "0.8" }
-memchr = { git = "https://git.sly.so/kade/memchr", package = "memchr", version = "2.7" }
 regex = { git = "https://git.sly.so/kade/regex", package = "regex", version = "1.10" }
 once_cell = { git = "https://git.sly.so/kade/once_cell", package = "once_cell", version = "1.19" }
 

@@ -1,8 +1,8 @@
 //! Integration tests for dedup-wasm
 
 use dedup_wasm::{
-    DedupSettings, SectionSource, StreamingDedup, WasmRepetitionCheck, check_repetition,
-    deduplicate_text, get_repetition_ratio,
+    DedupSettings, RustRepetitionCheck, SectionSource, StreamingDedup, WasmRepetitionCheck,
+    check_repetition, deduplicate_text, get_repetition_ratio,
 };
 
 #[test]
@@ -200,6 +200,12 @@ fn test_streaming_dedup_incremental() {
         window_size: 20,
         step_size: 5,
         warmup_ms: 0,
+        // This test is about whether a repeat spanning two `feed_chunk` calls
+        // is detected at all, not about when scans are scheduled. With the
+        // default 512-byte interval these two ~53-byte chunks never reach the
+        // scan, so the gate is disabled here to keep the test focused. The gate
+        // has its own coverage in `test_interval_gate_*`.
+        min_check_interval_bytes: 0,
         ..Default::default()
     };
     let json = serde_json::to_string(&settings).unwrap();
@@ -296,4 +302,178 @@ fn scenario_g_reworded_content_no_false_positive() {
         !result.repeated,
         "reworded content must NOT be flagged as repetition (the 'r docs' regression)"
     );
+}
+
+/// A repeated region must never be reported as larger than it actually is.
+///
+/// The n-gram pass hashes small 30..50 byte *seed* windows to find candidates,
+/// then used to size the emitted section by `effective_window_size` (up to 100)
+/// without ever verifying that wider span. A 50-byte repeat was therefore
+/// reported as 100 bytes of repetition with `similarity` taken from the seed
+/// alone, and `deduplicate_text` deleted 50 bytes of text unique to the input.
+///
+/// The fixture must contain that hazard or it proves nothing: the two halves
+/// share exactly their first 50 bytes, and their trailing 50 differ. On the old
+/// code this reported `len=100` and destroyed `pqrs09876` outright.
+#[test]
+fn test_ngram_section_is_not_longer_than_the_repeat_that_verified() {
+    fn filler(seed: &str, n: usize) -> String {
+        seed.chars().cycle().take(n).collect()
+    }
+
+    let shared = filler("ABCDEFGHIJ", 50);
+    let unique_a = filler("vwxyz12345", 50);
+    let unique_b = filler("pqrs09876", 50);
+    let text = format!("{}{}{}{}", shared, unique_a, shared, unique_b);
+
+    assert_eq!(
+        text.len(),
+        200,
+        "half_text=100 -> effective_window_size=100"
+    );
+    assert_eq!(&text[0..50], &text[100..150], "the seed really does repeat");
+    assert_ne!(
+        &text[50..100],
+        &text[150..200],
+        "the tails really do differ — the hazard lives here"
+    );
+
+    let result = check_repetition(&text, &DedupSettings::default());
+
+    let ngram: Vec<_> = result
+        .sections
+        .iter()
+        .filter(|s| s.source == SectionSource::Ngram)
+        .collect();
+    assert!(
+        !ngram.is_empty(),
+        "fixture is broken: it no longer detects the 50-byte repeat"
+    );
+
+    for s in &ngram {
+        let claimed = s.repeat_end - s.repeat_start;
+        assert!(
+            claimed <= 50,
+            "claimed a {claimed}-byte repeat, but only 50 bytes are shared \
+             (similarity reported {:.3})",
+            s.similarity
+        );
+        assert_eq!(
+            claimed,
+            s.first_end - s.first_start,
+            "the two spans of one section must be the same width"
+        );
+    }
+
+    // The consequence that actually matters: unique content must survive.
+    let deduped = deduplicate_text(&text, &DedupSettings::default());
+    assert!(
+        deduped.contains("pqrs09876"),
+        "deduplication destroyed text unique to the input"
+    );
+    assert!(
+        deduped.contains("vwxyz12345"),
+        "deduplication destroyed the other unique tail"
+    );
+    assert_eq!(deduped.len(), 150, "only the shared 50 bytes should go");
+}
+
+/// `min_repeat_length` must measure a span that was actually verified.
+///
+/// With the default window (`window_size` 100, `hash_window_size` 50) a
+/// threshold above the seed width can only be satisfied by a genuine
+/// full-width match — so a 100-byte threshold must reject this fixture
+/// outright rather than inheriting an unverified 100-byte extent.
+#[test]
+fn test_min_repeat_length_gates_verified_length() {
+    fn filler(seed: &str, n: usize) -> String {
+        seed.chars().cycle().take(n).collect()
+    }
+
+    let shared = filler("ABCDEFGHIJ", 50);
+    let text = format!(
+        "{}{}{}{}",
+        shared,
+        filler("vwxyz12345", 50),
+        shared,
+        filler("pqrs09876", 50)
+    );
+
+    let settings = DedupSettings {
+        min_repeat_length: 100,
+        ..DedupSettings::default()
+    };
+    let result = check_repetition(&text, &settings);
+
+    let ngram: Vec<_> = result
+        .sections
+        .iter()
+        .filter(|s| s.source == SectionSource::Ngram)
+        .collect();
+    assert!(
+        ngram.is_empty(),
+        "min_repeat_length=100 must reject a 50-byte verified repeat, \
+         but {} ngram section(s) survived",
+        ngram.len()
+    );
+}
+
+/// Regression for D10: `find_hash_matches` iterated an `AHashMap`, and `ahash`
+/// draws a fresh `RandomState` **per instance**, so two calls in the same process
+/// visited buckets in different orders. `check_ngram_pass` breaks on the first
+/// verified pair, so the set of sections it reported varied between calls.
+///
+/// The hazard only reproduces by calling repeatedly *within one process* — a
+/// "run the binary twice" test would pass, because a fresh process also gets a
+/// fresh seed. The assertion below compares spans, not just counts, so an
+/// ordering bug cannot satisfy it by coincidence.
+#[test]
+fn test_check_repetition_is_deterministic_across_calls() {
+    let unit = "the quick brown fox jumps over the lazy dog near the riverbank ";
+    let text = format!("{}{}", unit.repeat(200), unit.to_uppercase());
+
+    let settings = DedupSettings::default();
+    let spans = |result: &RustRepetitionCheck| -> Vec<(usize, usize, usize, usize)> {
+        let mut v: Vec<_> = result
+            .sections
+            .iter()
+            .map(|s| (s.first_start, s.first_end, s.repeat_start, s.repeat_end))
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+
+    let first = check_repetition(&text, &settings);
+
+    // Precondition: the fixture must actually produce sections. Without this the
+    // equality assertions below pass vacuously on an empty result.
+    assert!(
+        !first.sections.is_empty(),
+        "fixture must yield sections to be a determinism test, got 0"
+    );
+    assert!(
+        first.repeated,
+        "fixture must be flagged repeated, got repeated=false"
+    );
+
+    for call in 1..12 {
+        let again = check_repetition(&text, &settings);
+        assert_eq!(
+            first.sections.len(),
+            again.sections.len(),
+            "section count drifted on call {call}: {} vs {}",
+            first.sections.len(),
+            again.sections.len()
+        );
+        assert_eq!(
+            spans(&first),
+            spans(&again),
+            "section spans drifted on call {call}"
+        );
+        assert_eq!(
+            first.repeated, again.repeated,
+            "verdict drifted on call {call}"
+        );
+    }
 }

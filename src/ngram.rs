@@ -135,6 +135,12 @@ pub fn find_hash_matches(
             }
         }
     }
+    // `positions` is an AHashMap whose RandomState is drawn per instance, so
+    // `values()` iteration order differs between calls in the same process.
+    // Callers break on the first verified pair, so unordered buckets made the
+    // set of sections reported by `check_repetition` vary run to run.
+    // Canonical order by (i, j) makes the analysis deterministic.
+    matches.sort_unstable();
     matches
 }
 

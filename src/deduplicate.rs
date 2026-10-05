@@ -7,7 +7,7 @@
 //! - `StreamingState` — incremental state machine with warmup gate, min-content-length gate, and action determination
 
 use crate::ngram::{compute_ngram_hashes, find_hash_matches};
-use crate::sentence::{Sentence, split_sentences};
+use crate::sentence::split_sentences;
 use crate::similarity::{TokenSet, char_ngram_similarity, jaccard_similarity};
 use crate::tokenize::tokenize;
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,23 @@ pub struct DedupSettings {
     pub max_repetitions: usize,
     /// Warmup window in milliseconds before repetition checks begin. Default 3000.
     pub warmup_ms: u64,
+    /// Minimum number of new bytes that must accumulate before a streamed check
+    /// re-runs the full scan. `0` disables the gate and re-checks on every chunk.
+    ///
+    /// `check_repetition` is O(buffer length), and `feed_chunk` runs it over the
+    /// *whole accumulated* buffer. Re-checking on every streamed delta therefore
+    /// costs O(n²) in message length: measured per-check latency is linear
+    /// (~1.7 ms at 4 KB, ~24 ms at 48 KB), so 48 KB at a 12-byte delta is 4096
+    /// checks and tens of seconds of blocking. Gating on new bytes divides that
+    /// by roughly `min_check_interval_bytes / delta`.
+    ///
+    /// The trade is detection granularity: a repeat completing mid-interval is
+    /// reported up to `min_check_interval_bytes` late. 512 is chosen to sit
+    /// above `context_gap_max` (300) — the widest gap within which the detector
+    /// can pair two spans at all — so the interval never straddles more than one
+    /// pairing window. This bounds the cost; it does not make the scan
+    /// incremental. That is a separate change, tracked in the todos note.
+    pub min_check_interval_bytes: usize,
 }
 
 fn default_max_repetitions() -> usize {
@@ -40,6 +57,10 @@ fn default_max_repetitions() -> usize {
 }
 fn default_warmup_ms() -> u64 {
     3000
+}
+
+fn default_min_check_interval_bytes() -> usize {
+    512
 }
 
 impl Default for DedupSettings {
@@ -55,6 +76,7 @@ impl Default for DedupSettings {
             min_repeat_length: 50,
             max_repetitions: default_max_repetitions(),
             warmup_ms: default_warmup_ms(),
+            min_check_interval_bytes: default_min_check_interval_bytes(),
         }
     }
 }
@@ -105,9 +127,11 @@ pub enum StreamAction {
 pub struct StreamingState {
     settings: DedupSettings,
     content: String,
-    ngram_hashes: Vec<u64>,
     /// Byte position where the last successful check ran; used for content-delta gating.
     last_check_end: usize,
+    /// Buffer length at the last full `check_repetition` run; used for the
+    /// byte-interval gate so skipped chunks still count toward the next check.
+    last_check_len: usize,
     pub repetition_count: usize,
     #[cfg(not(target_arch = "wasm32"))]
     start_time: std::time::Instant,
@@ -120,8 +144,8 @@ impl StreamingState {
         Self {
             settings,
             content: String::new(),
-            ngram_hashes: Vec::new(),
             last_check_end: 0,
+            last_check_len: 0,
             repetition_count: 0,
             start_time: std::time::Instant::now(),
         }
@@ -133,8 +157,8 @@ impl StreamingState {
         Self {
             settings,
             content: String::new(),
-            ngram_hashes: Vec::new(),
             last_check_end: 0,
+            last_check_len: 0,
             repetition_count: 0,
         }
     }
@@ -145,6 +169,7 @@ impl StreamingState {
     /// - **Warmup gate**: if `elapsed < 3s`, returns empty `RepetitionCheck` immediately.
     /// - **Content length gate**: skip checks when total content is below `min_content_length`.
     /// - **Chunk delta gate**: skip checks unless enough new characters have arrived since the last check (avoids rapid-fire re-checking on tiny chunks).
+    /// - **Interval gate**: skip unless `min_check_interval_bytes` have accumulated since the last full check. This is the one that bounds cost — the three above only avoid degenerate cases.
     pub fn feed_chunk(&mut self, chunk: &str) -> RepetitionCheck {
         let before_len = self.content.len();
         self.content.push_str(chunk);
@@ -172,7 +197,12 @@ impl StreamingState {
             };
         }
 
-        // Chunk delta gate — don't re-check unless at least some new content has arrived.
+        // Chunk delta gate — don't re-check unless enough new content has arrived.
+        //
+        // `check_repetition` below is O(accumulated length), so re-running it per
+        // streamed delta is O(n^2) in message length. Gate on bytes accumulated
+        // since the last actual check, not merely on "a delta arrived": the
+        // latter is what made a 48 KB message take tens of seconds.
         let chunk_delta = after_len.saturating_sub(before_len);
         if before_len > 0 && chunk_delta == 0 {
             return RepetitionCheck {
@@ -180,11 +210,22 @@ impl StreamingState {
                 sections: Vec::new(),
             };
         }
+        if self.settings.min_check_interval_bytes > 0 && before_len > 0 {
+            let since_last_check = after_len.saturating_sub(self.last_check_len);
+            if since_last_check < self.settings.min_check_interval_bytes {
+                return RepetitionCheck {
+                    repeated: false,
+                    sections: Vec::new(),
+                };
+            }
+        }
 
         // Update n-gram hashes for the full accumulated content.
-        self.update_ngrams();
-
+        // No n-gram pre-pass here: `check_ngram_pass` recomputes its own hashes at
+        // step=1 for exhaustive matching, so caching a subsampled table first was a
+        // full O(n) scan of the accumulated buffer thrown away on every token.
         let result = check_repetition(&self.content, &self.settings);
+        self.last_check_len = after_len;
 
         // Update sentence boundaries after a successful check.
         if before_len > 0 {
@@ -239,8 +280,8 @@ impl StreamingState {
 
     pub fn reset(&mut self) {
         self.content.clear();
-        self.ngram_hashes.clear();
         self.last_check_end = 0;
+        self.last_check_len = 0;
         self.repetition_count = 0;
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -252,14 +293,6 @@ impl StreamingState {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn reset_timer(&mut self) {
         self.start_time = std::time::Instant::now();
-    }
-
-    fn update_ngrams(&mut self) {
-        self.ngram_hashes = compute_ngram_hashes(
-            &self.content,
-            self.settings.window_size,
-            self.settings.step_size,
-        );
     }
 }
 
@@ -301,7 +334,7 @@ fn check_ngram_pass(text: &str, settings: &DedupSettings) -> Vec<RepeatedSection
     let hash_step_size = 1; // step=1 for exhaustive matching
 
     // Use smaller window (30-50 chars) to detect exact repetitions regardless of surrounding context.
-    let hash_window_size = effective_window_size.min(50).max(30);
+    let hash_window_size = effective_window_size.clamp(30, 50);
 
     let hashes = compute_ngram_hashes(text, hash_window_size, hash_step_size);
     if hashes.len() < 2 {
@@ -315,6 +348,23 @@ fn check_ngram_pass(text: &str, settings: &DedupSettings) -> Vec<RepeatedSection
 
     let mut sections: Vec<RepeatedSection> = Vec::new();
 
+    // Verify the region we are about to *claim*, not just the seed.
+    //
+    // `hash_window_size` (30..50) is only a seed detector, while the section
+    // emitted below is sized by `effective_window_size` (up to 100). Emitting
+    // the wider extent on the strength of the narrower verification overstated
+    // the repeat: `similarity` described the seed alone, while `repeat_end` —
+    // and therefore the span `deduplicate_text` deletes — was taken on trust.
+    // Try the widest extent first, fall back to the seed, so the emitted extent
+    // is always one that actually passed.
+    //
+    // Loop-invariant, so hoisted out of the candidate loop.
+    let widths: &[usize] = if effective_window_size == hash_window_size {
+        &[effective_window_size]
+    } else {
+        &[effective_window_size, hash_window_size]
+    };
+
     for (i, j) in matches {
         // Skip candidates whose windows overlap an already-accepted section —
         // on repetitive text thousands of adjacent window pairs describe ONE
@@ -327,32 +377,42 @@ fn check_ngram_pass(text: &str, settings: &DedupSettings) -> Vec<RepeatedSection
             continue;
         }
 
-        // Verify with actual string comparison (lazy slices, no upfront allocation).
-        let a_text = &text[i..i_end.min(text.len())];
-        let b_text = &text[j..j_end.min(text.len())];
+        let mut verified: Option<(usize, usize, f64)> = None;
+        for &len in widths {
+            // Lazy slices, no upfront allocation.
+            let a_end = (i + len).min(text.len());
+            let b_end = (j + len).min(text.len());
+            let a_text = &text[i..a_end];
+            let b_text = &text[j..b_end];
 
-        let a_tokens = tokenize(a_text);
-        let b_tokens = tokenize(b_text);
-        let word_sim = jaccard_similarity(&a_tokens, &b_tokens);
-        let char_sim = char_ngram_similarity(a_text, b_text, 4);
-        let similarity = word_sim.max(char_sim);
+            let word_sim = jaccard_similarity(&tokenize(a_text), &tokenize(b_text));
+            let char_sim = char_ngram_similarity(a_text, b_text, 4);
+            let similarity = word_sim.max(char_sim);
 
-        if similarity >= settings.ngram_similarity_threshold {
-            let a_start = i.min(text.len());
-            let a_end = (a_start + effective_window_size).min(text.len());
-            let b_start = j.min(text.len());
-            let b_end = (b_start + effective_window_size).min(text.len());
-
-            if b_end - b_start >= settings.min_repeat_length {
-                sections.push(RepeatedSection {
-                    first_start: a_start,
-                    first_end: a_end,
-                    repeat_start: b_start,
-                    repeat_end: b_end,
-                    similarity,
-                    source: SectionSource::Ngram,
-                });
+            if similarity >= settings.ngram_similarity_threshold {
+                verified = Some((a_end, b_end, similarity));
+                break;
             }
+        }
+
+        let Some((a_end, b_end, similarity)) = verified else {
+            continue;
+        };
+
+        let a_start = i.min(text.len());
+        let b_start = j.min(text.len());
+
+        // Now meaningful: `b_end - b_start` is the span that *verified*, so this
+        // knob finally measures what its name says.
+        if b_end - b_start >= settings.min_repeat_length {
+            sections.push(RepeatedSection {
+                first_start: a_start,
+                first_end: a_end,
+                repeat_start: b_start,
+                repeat_end: b_end,
+                similarity,
+                source: SectionSource::Ngram,
+            });
         }
     }
 
@@ -372,10 +432,47 @@ fn check_sentence_pass(
 
     let mut sentence_matches = Vec::new();
 
-    for i in 0..sentences.len() {
-        for j in (i + 1)..sentences.len() {
+    // Tokenise every sentence ONCE, up front.
+    //
+    // The pair loop runs each sentence through `tokenize` once per partner. On
+    // degenerate input -- thousands of very short sentences, which is exactly
+    // what a thought loop produces -- the gap window still admits hundreds of
+    // thousands of pairs, so each sentence was tokenised ~60 times to no
+    // effect. `tokenize` is pure and `sentences` is fixed for the duration of
+    // this pass, so hoisting it is exactly equivalent, not an approximation.
+    //
+    // Tempting next step: tokenise lazily, only for sentences that reach a
+    // comparison, on the theory that most sentences fall outside every gap.
+    // Measured, that is 0.92x — SLOWER. The reasoning is wrong because `j`
+    // walks every sentence in the buffer, so each one is tokenised as the
+    // right-hand side regardless; only the `i` side is windowed, and that
+    // saves nothing over caching. Eager stays. See W1e in the note.
+    let tokens: Vec<TokenSet> = sentences.iter().map(|s| tokenize(&s.text)).collect();
+
+    // Pair enumeration is bounded by `context_gap_max` in BYTES, not by the
+    // sentence count. A fixed "last k sentences" cap would silently drop pairs
+    // the gap test accepts whenever sentences are short (1-byte sentences span
+    // far less than 300 bytes per k), so it would change verdicts.
+    //
+    // Instead: `gap = b.start - a.end` grows monotonically as `i` walks
+    // backwards, because `split_sentences` yields ordered, non-overlapping
+    // spans. So for a fixed `j` the pairs that survive the gap test form the
+    // contiguous suffix `[lo, j)`. A single `lo` pointer advances monotonically
+    // as `j` increases, turning the O(sentences^2) sweep into
+    // O(sentences + pairs_within_gap) while skipping only pairs the gap test
+    // would have rejected anyway. Output is byte-for-byte identical.
+    let mut lo = 0usize;
+
+    for j in 1..sentences.len() {
+        let b = &sentences[j];
+        let earliest = b.start.saturating_sub(settings.context_gap_max);
+
+        while lo < j && sentences[lo].end < earliest {
+            lo += 1;
+        }
+
+        for i in lo..j {
             let a = &sentences[i];
-            let b = &sentences[j];
 
             // Skip pairs already covered by n-gram detection.
             if existing_sections.iter().any(|s| {
@@ -387,15 +484,7 @@ fn check_sentence_pass(
                 continue;
             }
 
-            // Require proximity (300-char context gap default).
-            let gap = b.start.saturating_sub(a.end);
-            if gap > settings.context_gap_max {
-                continue;
-            }
-
-            let a_tokens = tokenize(&a.text);
-            let b_tokens = tokenize(&b.text);
-            let word_sim = jaccard_similarity(&a_tokens, &b_tokens);
+            let word_sim = jaccard_similarity(&tokens[i], &tokens[j]);
 
             if word_sim >= settings.sentence_similarity_threshold
                 && b.end - b.start >= settings.sentence_min_repeat_length
@@ -407,7 +496,7 @@ fn check_sentence_pass(
 
     // Require corroborating evidence: ≥2 similar pairs, OR 1 strong pair (>0.9) confirmed by n-gram pass.
     let strong_pair = sentence_matches.iter().find(|m| m.4 > 0.9);
-    let ngram_confirms_strong = strong_pair.map_or(false, |&(_, a_start, _, b_end, _)| {
+    let ngram_confirms_strong = strong_pair.is_some_and(|&(_, a_start, _, b_end, _)| {
         existing_sections
             .iter()
             .any(|s| s.repeat_start <= b_end && s.repeat_end >= a_start)
@@ -714,7 +803,7 @@ mod tests {
 
     #[test]
     fn test_determine_action_disabled_returns_none() {
-        let mut state = StreamingState::new(DedupSettings {
+        let state = StreamingState::new(DedupSettings {
             enabled: false,
             ..Default::default()
         });
@@ -732,5 +821,116 @@ mod tests {
         };
 
         assert_eq!(state.determine_action(&check), StreamAction::None);
+    }
+
+    /// Degenerate cycle: the reported "thought loop" shape.
+    const LOOP: &str =
+        "Let go.\n\nLet write.\n\nLet go.\n\nLet construct.\n\nLet go.\n\nLet issue\n\n";
+
+    /// Feed `text` in `chunk`-sized pieces, returning how many times the full
+    /// scan actually ran, the number of chunks fed, and the last scan's result.
+    ///
+    /// A scan is observable because it advances `last_check_len`; a gated-out
+    /// chunk leaves it untouched. Capturing the result at that same moment
+    /// matters: reading the return value of the *final* `feed_chunk` would
+    /// report the empty result of a skipped call, not the last real scan.
+    fn feed_counting_scans(
+        text: &str,
+        chunk: usize,
+        settings: DedupSettings,
+    ) -> (usize, usize, Option<RepetitionCheck>) {
+        let mut state = StreamingState::new(DedupSettings {
+            warmup_ms: 0,
+            ..settings
+        });
+        let mut scans = 0usize;
+        let mut last_scan: Option<RepetitionCheck> = None;
+        let mut seen = state.last_check_len;
+        let mut i = 0;
+        while i + chunk <= text.len() {
+            let r = state.feed_chunk(&text[i..i + chunk]);
+            if state.last_check_len != seen {
+                scans += 1;
+                seen = state.last_check_len;
+                last_scan = Some(r);
+            }
+            i += chunk;
+        }
+        let r = state.feed_chunk(&text[i..]);
+        if state.last_check_len != seen {
+            last_scan = Some(r);
+        }
+        (scans, text.len() / chunk, last_scan)
+    }
+
+    #[test]
+    fn test_interval_gate_cuts_scan_count_on_a_long_stream() {
+        let text = &LOOP.repeat(300); // 6.6 KB, the degenerate shape
+        let (scans, chunks, _) = feed_counting_scans(
+            text,
+            12,
+            DedupSettings {
+                min_check_interval_bytes: 512,
+                ..Default::default()
+            },
+        );
+
+        assert!(scans > 0, "the gate must still permit checks, got {scans}");
+        // ~6600 bytes / 512 = ~13 scans versus 550 chunks. Assert the order of
+        // magnitude rather than an exact count: the point is that the scan count
+        // tracks bytes, not chunks. Paired with the zero-interval control below.
+        assert!(
+            scans * 10 < chunks,
+            "interval gate should scan far less often than every chunk: {scans} scans for {chunks} chunks"
+        );
+    }
+
+    #[test]
+    fn test_interval_zero_scans_every_chunk() {
+        // The control for the test above. Without it, the gate could be "fixed"
+        // by never scanning at all and that would still pass. Not exactly
+        // `chunks`: the ~400-byte content-length gate suppresses the first ~34
+        // chunks regardless of the interval, so this asserts the same 10x
+        // contrast in the other direction.
+        let text = &LOOP.repeat(300);
+        let (scans, chunks, _) = feed_counting_scans(
+            text,
+            12,
+            DedupSettings {
+                min_check_interval_bytes: 0,
+                ..Default::default()
+            },
+        );
+
+        assert!(
+            scans * 10 > chunks,
+            "disabling the gate must scan on (essentially) every chunk: {scans} scans for {chunks} chunks"
+        );
+    }
+
+    #[test]
+    fn test_interval_gate_still_detects_the_loop() {
+        // A gate that suppresses checks but also suppresses findings would pass
+        // the scan-count test while defeating the detector. Assert detection survives.
+        let text = &LOOP.repeat(300);
+        let (scans, _, last) = feed_counting_scans(
+            text,
+            12,
+            DedupSettings {
+                min_check_interval_bytes: 512,
+                ..Default::default()
+            },
+        );
+
+        assert!(scans > 0, "expected at least one scan");
+        let last = last.expect("a scan must have run");
+        assert!(
+            last.repeated,
+            "gated streaming must still report the degenerate loop it scanned for"
+        );
+        assert!(
+            !last.sections.is_empty(),
+            "a positive result carrying no sections would steer nothing"
+        );
     }
 }

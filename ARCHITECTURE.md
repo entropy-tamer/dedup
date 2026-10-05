@@ -18,7 +18,7 @@ Detects when a model repeats itself within a single message — identical or nea
 **Two-pass algorithm:**
 
 1. **N-gram pass**: sliding window over the text, n-grams computed at configurable step size and hashed with Rabin-Karp rolling hash (`ngram.rs`). Window pairs are compared within the pass using Jaccard similarity on tokenized output (`similarity.rs`), plus character-level similarity as a fallback that catches word-level misses (reworded but structurally identical sentences).
-2. **Sentence pass**: text split into sentences (`split_sentences.rs`, `sentence.rs`); Jaccard similarity over tokenized sentence pairs with proximity gating — gaps larger than `context_gap_max` indicate contextual variation rather than a loop. The sentence pass requires corroboration: at least two similar pairs, or one very strong pair (> 0.9 similarity) confirmed by the n-gram pass.
+2. **Sentence pass**: text split into sentences (`sentence.rs`); Jaccard similarity over tokenized sentence pairs with proximity gating — gaps larger than `context_gap_max` indicate contextual variation rather than a loop. The sentence pass requires corroboration: at least two similar pairs, or one very strong pair (> 0.9 similarity) confirmed by the n-gram pass.
 
 **Why two passes:** the n-gram pass is strict (default threshold 0.95) and catches near-exact duplicates fast. The sentence pass is looser (0.75) but requires corroboration, so legitimate rephrasing never triggers an abort.
 
@@ -117,7 +117,7 @@ graph LR
     A[tokenize.rs] --> B[deduplicate.rs]
     C[ngram.rs<br/>Rabin-Karp hashing] --> B
     D[similarity.rs<br/>Jaccard + char-n-gram] --> B
-    E[sentence.rs / split_sentences.rs] --> B
+    E[sentence.rs] --> B
     B --> F[presets.rs]
     H[lib.rs<br/>public API + WASM exports] --> A
     H --> C
