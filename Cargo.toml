@@ -18,15 +18,15 @@ path = "test/dedup_tests.rs"
 serde = { git = "https://git.sly.so/kade/serde", package = "serde", features = ["derive"] }
 serde_json = { git = "https://git.sly.so/kade/serde_json" }
 wasm-bindgen = { git = "https://git.sly.so/kade/wasm-bindgen", package = "wasm-bindgen" }
-ahash = { git = "https://git.sly.so/kade/ahash", package = "ahash", version = "0.8" }
-regex = { git = "https://git.sly.so/kade/regex", package = "regex", version = "1.10" }
-once_cell = { git = "https://git.sly.so/kade/once_cell", package = "once_cell", version = "1.19" }
+ahash = {git = "https://git.sly.so/kade/ahash", package = "ahash"}
+regex = {git = "https://git.sly.so/kade/regex", package = "regex"}
+once_cell = {git = "https://git.sly.so/kade/once_cell", package = "once_cell"}
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { git = "https://git.sly.so/kade/getrandom", features = ["wasm_js"] }
 
 [dev-dependencies]
-wasm-bindgen-test = { git = "https://git.sly.so/kade/wasm-bindgen", package = "wasm-bindgen-test", version = "0.3" }
+wasm-bindgen-test = {git = "https://git.sly.so/kade/wasm-bindgen", package = "wasm-bindgen-test"}
 
 [profile.release]
 opt-level = "z"
