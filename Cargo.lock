@@ -17,18 +17,9 @@ dependencies = [
 [[package]]
 name = "aho-corasick"
 version = "1.1.4"
-source = "git+https://git.sly.so/kade/aho-corasick#e3a1943de649ed1a6b173661ab270faa86d4dffe"
+source = "git+https://git.sly.so/kade/aho-corasick#c20d57907e9a8ce3296c1f079f892ce10dbc6861"
 dependencies = [
  "memchr 2.8.0",
-]
-
-[[package]]
-name = "aho-corasick"
-version = "1.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
-dependencies = [
- "memchr 2.8.3",
 ]
 
 [[package]]
@@ -171,7 +162,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "memchr"
 version = "2.8.0"
-source = "git+https://git.sly.so/kade/memchr#6f582137d879d4c79c81736c0e0a61aca21bf9f8"
+source = "git+https://git.sly.so/kade/memchr#2fbf6fa2420019c60a1369fb1adf4a551eec7f6c"
 
 [[package]]
 name = "memchr"
@@ -272,10 +263,10 @@ source = "git+https://git.sly.so/kade/r-efi#1c6682ee71abf35ad7b90ca56d6b59243f52
 
 [[package]]
 name = "regex"
-version = "1.12.3"
-source = "git+https://git.sly.so/kade/regex#6f52a103162be03cfc367df6c59a27ac49d66ae4"
+version = "1.13.1"
+source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
 dependencies = [
- "aho-corasick 1.1.4",
+ "aho-corasick",
  "memchr 2.8.0",
  "regex-automata",
  "regex-syntax",
@@ -283,18 +274,18 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.14"
-source = "git+https://git.sly.so/kade/regex#6f52a103162be03cfc367df6c59a27ac49d66ae4"
+version = "0.4.18"
+source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
 dependencies = [
- "aho-corasick 1.1.5",
- "memchr 2.8.3",
+ "aho-corasick",
+ "memchr 2.8.0",
  "regex-syntax",
 ]
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.10"
-source = "git+https://git.sly.so/kade/regex#6f52a103162be03cfc367df6c59a27ac49d66ae4"
+version = "0.8.11"
+source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
 
 [[package]]
 name = "rustversion"

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "WASM binding for text deduplication — n-gram, Jaccard, sentence similarity"
 license = "MIT"
-repository = "https://git.sly.so/kade/stalk"
+repository = "https://git.sly.so/kade/dedup"
 rust-version = "1.101.0"
 
 [lib]
