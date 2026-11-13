@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ahash"
 version = "0.8.10"
-source = "git+https://git.sly.so/kade/ahash?rev=155f8e1d9c5a8edb8ee714be066826175fc457f0#155f8e1d9c5a8edb8ee714be066826175fc457f0"
+source = "git+https://git.sly.so/kade/ahash?rev=9aa41ae315c45e98cda1a585626b77610c84599c#9aa41ae315c45e98cda1a585626b77610c84599c"
 dependencies = [
  "getrandom",
  "once_cell",
@@ -18,13 +18,30 @@ name = "aho-corasick"
 version = "1.1.4"
 source = "git+https://git.sly.so/kade/aho-corasick#c20d57907e9a8ce3296c1f079f892ce10dbc6861"
 dependencies = [
- "memchr",
+ "memchr 2.8.0",
 ]
+
+[[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "git+https://git.sly.so/kade/autocfg#2c2fcf66fb43e09dc18b5b405b72fad51080eb18"
+
+[[package]]
+name = "bitflags"
+version = "2.11.1"
+source = "git+https://git.sly.so/kade/bitflags#e2b2ab9f0d6bfd0b9796ab54341e1ef290ce92e7"
+
+[[package]]
+name = "bitflags"
+version = "2.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "bumpalo"
@@ -54,17 +71,29 @@ dependencies = [
  "getrandom",
  "once_cell",
  "regex",
- "serde",
- "serde_json",
+ "serde 1.0.229 (git+https://git.sly.so/kade/serde)",
+ "serde_json 1.0.151",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
+
+[[package]]
+name = "equivalent"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 
 [[package]]
 name = "find-msvc-tools"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26b73573e6edcd2af0cdf47bd6cb58f0b3839491263c314eaad1ccf24430e1de"
+
+[[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "futures-core"
@@ -90,18 +119,65 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.4.2"
-source = "git+https://git.sly.so/kade/getrandom?rev=d67801e8e7bc700937cc9ecf59cd19aa65c64c67#d67801e8e7bc700937cc9ecf59cd19aa65c64c67"
+source = "git+https://git.sly.so/kade/getrandom?rev=347be7dda8885f071b7c78e662935d607a53e907#347be7dda8885f071b7c78e662935d607a53e907"
 dependencies = [
  "js-sys",
  "libc",
  "r-efi",
+ "wasip2",
+ "wasip3",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "foldhash",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "id-arena"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
+
+[[package]]
+name = "indexmap"
+version = "2.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+dependencies = [
+ "equivalent",
+ "hashbrown 0.17.1",
+ "serde 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_core 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "itoa"
 version = "1.0.18"
 source = "git+https://git.sly.so/kade/itoa#29057f99a7526011512c4d4616d73d49c92bed26"
+
+[[package]]
+name = "itoa"
+version = "1.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
 name = "js-sys"
@@ -111,6 +187,12 @@ dependencies = [
  "futures-util",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "leb128fmt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
@@ -123,9 +205,21 @@ version = "0.2.16"
 source = "git+https://git.sly.so/kade/compiler-builtins#aeab328368d6ed8dc6acba47b7db6ad08be953d2"
 
 [[package]]
+name = "log"
+version = "0.4.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "git+https://git.sly.so/kade/memchr#29e411e804afa0912594dbe49ef9a38f9fb1f162"
+
+[[package]]
+name = "memchr"
+version = "2.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "minicov"
@@ -170,11 +264,39 @@ version = "0.2.17"
 source = "git+https://git.sly.so/kade/pin-project-lite#cef6702d405b050725afffc8fd304d5176e2627b"
 
 [[package]]
+name = "prettyplease"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
+dependencies = [
+ "proc-macro2 1.0.107 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "proc-macro2"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
+dependencies = [
+ "unicode-ident 1.0.27",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "git+https://git.sly.so/kade/proc-macro2#f72f78359d5291aafce2d2a77be7541bf3803a3d"
 dependencies = [
- "unicode-ident",
+ "unicode-ident 1.0.26",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
+dependencies = [
+ "proc-macro2 1.0.107 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -182,7 +304,7 @@ name = "quote"
 version = "1.0.47"
 source = "git+https://git.sly.so/kade/quote#ec3c31c9870fcbcfabd33038e70e65eef4515e3c"
 dependencies = [
- "proc-macro2",
+ "proc-macro2 1.0.107 (git+https://git.sly.so/kade/proc-macro2)",
 ]
 
 [[package]]
@@ -196,7 +318,7 @@ version = "1.13.1"
 source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
 dependencies = [
  "aho-corasick",
- "memchr",
+ "memchr 2.8.0",
  "regex-automata",
  "regex-syntax",
 ]
@@ -207,7 +329,7 @@ version = "0.4.18"
 source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
 dependencies = [
  "aho-corasick",
- "memchr",
+ "memchr 2.8.0",
  "regex-syntax",
 ]
 
@@ -232,12 +354,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+
+[[package]]
+name = "serde"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
+dependencies = [
+ "serde_core 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "git+https://git.sly.so/kade/serde#31648d4edc69a1793f0ebd8b96670ed90c029cc9"
 dependencies = [
- "serde_core",
- "serde_derive",
+ "serde_core 1.0.229 (git+https://git.sly.so/kade/serde)",
+ "serde_derive 1.0.229 (git+https://git.sly.so/kade/serde)",
+]
+
+[[package]]
+name = "serde_core"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
+dependencies = [
+ "serde_derive 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -245,7 +391,18 @@ name = "serde_core"
 version = "1.0.229"
 source = "git+https://git.sly.so/kade/serde#31648d4edc69a1793f0ebd8b96670ed90c029cc9"
 dependencies = [
- "serde_derive",
+ "serde_derive 1.0.229 (git+https://git.sly.so/kade/serde)",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+dependencies = [
+ "proc-macro2 1.0.107 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 1.0.47 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -253,9 +410,9 @@ name = "serde_derive"
 version = "1.0.229"
 source = "git+https://git.sly.so/kade/serde#31648d4edc69a1793f0ebd8b96670ed90c029cc9"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "proc-macro2 1.0.107 (git+https://git.sly.so/kade/proc-macro2)",
+ "quote 1.0.47 (git+https://git.sly.so/kade/quote)",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -263,11 +420,24 @@ name = "serde_json"
 version = "1.0.151"
 source = "git+https://git.sly.so/kade/serde_json#aa3c2272975d9aa530257412dc694901dba66deb"
 dependencies = [
- "itoa",
- "memchr",
- "serde",
- "serde_core",
- "zmij",
+ "itoa 1.0.18",
+ "memchr 2.8.0",
+ "serde 1.0.229 (git+https://git.sly.so/kade/serde)",
+ "serde_core 1.0.229 (git+https://git.sly.so/kade/serde)",
+ "zmij 1.0.21",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.154"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
+dependencies = [
+ "itoa 1.0.19",
+ "memchr 2.8.3",
+ "serde 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_core 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zmij 1.0.23",
 ]
 
 [[package]]
@@ -283,12 +453,34 @@ source = "git+https://git.sly.so/kade/slab#66b110d47ade8dd0e599a91fe521aad671370
 
 [[package]]
 name = "syn"
+version = "2.0.119"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
+dependencies = [
+ "proc-macro2 1.0.107 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 1.0.47 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-ident 1.0.27",
+]
+
+[[package]]
+name = "syn"
 version = "3.0.9"
 source = "git+https://git.sly.so/kade/syn#fb24ad8257f6bb239c8d1526f07c19836845b36c"
 dependencies = [
- "proc-macro2",
- "quote",
- "unicode-ident",
+ "proc-macro2 1.0.107 (git+https://git.sly.so/kade/proc-macro2)",
+ "quote 1.0.47 (git+https://git.sly.so/kade/quote)",
+ "unicode-ident 1.0.26",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ae9ccbea3a7b0b09443036490c8f34a8b1b760fd345e5c0dae0aac718faea79"
+dependencies = [
+ "proc-macro2 1.0.107 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 1.0.47 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-ident 1.0.27",
 ]
 
 [[package]]
@@ -305,6 +497,18 @@ version = "1.0.26"
 source = "git+https://git.sly.so/kade/unicode-ident#bfa27204892de77bc9629e13ea5c94ce92226b5a"
 
 [[package]]
+name = "unicode-ident"
+version = "1.0.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
 name = "version_check"
 version = "0.9.5"
 source = "git+https://git.sly.so/kade/version_check#1e353c16f7e728cff615c19129964fa9c02a0003"
@@ -317,6 +521,22 @@ checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
 dependencies = [
  "same-file",
  "winapi-util",
+]
+
+[[package]]
+name = "wasip2"
+version = "1.0.3+wasi-0.2.9"
+source = "git+https://git.sly.so/kade/wasi-rs?rev=14f4ec90e2c7ef619d425394b01d6a25a8d2965b#14f4ec90e2c7ef619d425394b01d6a25a8d2965b"
+dependencies = [
+ "wit-bindgen",
+]
+
+[[package]]
+name = "wasip3"
+version = "0.6.0+wasi-0.3.0-rc-2026-03-15"
+source = "git+https://git.sly.so/kade/wasi-rs?rev=14f4ec90e2c7ef619d425394b01d6a25a8d2965b#14f4ec90e2c7ef619d425394b01d6a25a8d2965b"
+dependencies = [
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -344,7 +564,7 @@ name = "wasm-bindgen-macro"
 version = "0.2.130"
 source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
- "quote",
+ "quote 1.0.47 (git+https://git.sly.so/kade/quote)",
  "wasm-bindgen-macro-support",
 ]
 
@@ -354,9 +574,9 @@ version = "0.2.130"
 source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "bumpalo",
- "proc-macro2",
- "quote",
- "syn",
+ "proc-macro2 1.0.107 (git+https://git.sly.so/kade/proc-macro2)",
+ "quote 1.0.47 (git+https://git.sly.so/kade/quote)",
+ "syn 3.0.9",
  "wasm-bindgen-shared",
 ]
 
@@ -365,7 +585,7 @@ name = "wasm-bindgen-shared"
 version = "0.2.130"
 source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
- "unicode-ident",
+ "unicode-ident 1.0.26",
 ]
 
 [[package]]
@@ -380,8 +600,8 @@ dependencies = [
  "nu-ansi-term",
  "num-traits",
  "oorandom",
- "serde",
- "serde_json",
+ "serde 1.0.229 (git+https://git.sly.so/kade/serde)",
+ "serde_json 1.0.151",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test-macro",
@@ -393,15 +613,49 @@ name = "wasm-bindgen-test-macro"
 version = "0.3.80"
 source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "proc-macro2 1.0.107 (git+https://git.sly.so/kade/proc-macro2)",
+ "quote 1.0.47 (git+https://git.sly.so/kade/quote)",
+ "syn 3.0.9",
 ]
 
 [[package]]
 name = "wasm-bindgen-test-shared"
 version = "0.2.130"
 source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
+
+[[package]]
+name = "wasm-encoder"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9dca005e69bf015e45577e415b9af8c67e8ee3c0e38b5b0add5aa92581ed5c"
+dependencies = [
+ "leb128fmt",
+ "wasmparser",
+]
+
+[[package]]
+name = "wasm-metadata"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da55e60097e8b37b475a0fa35c3420dd71d9eb7bd66109978ab55faf56a57efb"
+dependencies = [
+ "anyhow",
+ "indexmap",
+ "wasm-encoder",
+ "wasmparser",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f08c9adee0428b7bddf3890fc27e015ac4b761cc608c822667102b8bfd6995e"
+dependencies = [
+ "bitflags 2.13.2",
+ "hashbrown 0.16.1",
+ "indexmap",
+ "semver",
+]
 
 [[package]]
 name = "winapi-util"
@@ -428,6 +682,92 @@ dependencies = [
 ]
 
 [[package]]
+name = "wit-bindgen"
+version = "0.54.0"
+source = "git+https://git.sly.so/kade/wit-bindgen#36506271325b34551c2c10d21d584f669d71c7b8"
+dependencies = [
+ "bitflags 2.11.1",
+ "wit-bindgen-rust-macro",
+]
+
+[[package]]
+name = "wit-bindgen-core"
+version = "0.54.0"
+source = "git+https://git.sly.so/kade/wit-bindgen#36506271325b34551c2c10d21d584f669d71c7b8"
+dependencies = [
+ "anyhow",
+ "heck",
+ "wit-parser",
+]
+
+[[package]]
+name = "wit-bindgen-rust"
+version = "0.54.0"
+source = "git+https://git.sly.so/kade/wit-bindgen#36506271325b34551c2c10d21d584f669d71c7b8"
+dependencies = [
+ "anyhow",
+ "heck",
+ "indexmap",
+ "prettyplease",
+ "syn 2.0.119",
+ "wasm-metadata",
+ "wit-bindgen-core",
+ "wit-component",
+]
+
+[[package]]
+name = "wit-bindgen-rust-macro"
+version = "0.54.0"
+source = "git+https://git.sly.so/kade/wit-bindgen#36506271325b34551c2c10d21d584f669d71c7b8"
+dependencies = [
+ "anyhow",
+ "prettyplease",
+ "proc-macro2 1.0.107 (git+https://git.sly.so/kade/proc-macro2)",
+ "quote 1.0.47 (git+https://git.sly.so/kade/quote)",
+ "syn 2.0.119",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
+]
+
+[[package]]
+name = "wit-component"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4894f10d2d5cbc17c77e91f86a1e48e191a788da4425293b55c98b44ba3fcac9"
+dependencies = [
+ "anyhow",
+ "bitflags 2.13.2",
+ "indexmap",
+ "log",
+ "serde 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.154",
+ "wasm-encoder",
+ "wasm-metadata",
+ "wasmparser",
+ "wit-parser",
+]
+
+[[package]]
+name = "wit-parser"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330698718e82983499419494dd1e3d7811a457a9bf9f69734e8c5f07a2547929"
+dependencies = [
+ "anyhow",
+ "hashbrown 0.16.1",
+ "id-arena",
+ "indexmap",
+ "log",
+ "semver",
+ "serde 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.229 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.154",
+ "unicode-xid",
+ "wasmparser",
+]
+
+[[package]]
 name = "zerocopy"
 version = "0.8.47"
 source = "git+https://git.sly.so/kade/zerocopy#aca7f04b2b38a96be46dfb89ccebfe6f1bf70c1a"
@@ -440,12 +780,18 @@ name = "zerocopy-derive"
 version = "0.8.47"
 source = "git+https://git.sly.so/kade/zerocopy#aca7f04b2b38a96be46dfb89ccebfe6f1bf70c1a"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "proc-macro2 1.0.107 (git+https://git.sly.so/kade/proc-macro2)",
+ "quote 1.0.47 (git+https://git.sly.so/kade/quote)",
+ "syn 3.0.9",
 ]
 
 [[package]]
 name = "zmij"
 version = "1.0.21"
 source = "git+https://git.sly.so/kade/zmij#4e38f4bb8c25cbba1675504c5c442f33cb777083"
+
+[[package]]
+name = "zmij"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"

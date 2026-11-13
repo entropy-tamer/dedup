@@ -18,12 +18,12 @@ path = "test/dedup_tests.rs"
 serde = { git = "https://git.sly.so/kade/serde", package = "serde", features = ["derive"] }
 serde_json = { git = "https://git.sly.so/kade/serde_json" }
 wasm-bindgen = { git = "https://git.sly.so/kade/wasm-bindgen", rev = "88949292ea6550cea65a856e57458f3a47274743", package = "wasm-bindgen" }
-ahash = { git = "https://git.sly.so/kade/ahash", rev = "155f8e1d9c5a8edb8ee714be066826175fc457f0", package = "ahash" }
+ahash = { git = "https://git.sly.so/kade/ahash", rev = "9aa41ae315c45e98cda1a585626b77610c84599c", package = "ahash" }
 regex = {git = "https://git.sly.so/kade/regex", package = "regex"}
 once_cell = {git = "https://git.sly.so/kade/once_cell", package = "once_cell"}
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { git = "https://git.sly.so/kade/getrandom", rev = "d67801e8e7bc700937cc9ecf59cd19aa65c64c67", features = ["wasm_js"] }
+getrandom = { git = "https://git.sly.so/kade/getrandom", rev = "347be7dda8885f071b7c78e662935d607a53e907", features = ["wasm_js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = { git = "https://git.sly.so/kade/wasm-bindgen", rev = "88949292ea6550cea65a856e57458f3a47274743", package = "wasm-bindgen-test" }
