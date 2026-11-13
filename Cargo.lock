@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ahash"
 version = "0.8.10"
-source = "git+https://git.sly.so/kade/ahash?rev=95d1c99a0dc0acf8e9d54b98c7e3b2ba596a7210#95d1c99a0dc0acf8e9d54b98c7e3b2ba596a7210"
+source = "git+https://git.sly.so/kade/ahash?rev=76030a0313e8b5219cfa26b76e5137fc18da7036#76030a0313e8b5219cfa26b76e5137fc18da7036"
 dependencies = [
  "getrandom",
  "once_cell",
@@ -90,7 +90,7 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.4.3"
-source = "git+https://git.sly.so/kade/getrandom?rev=66b03fe4d29d2af1d88888a3cf1e08f8da13e149#66b03fe4d29d2af1d88888a3cf1e08f8da13e149"
+source = "git+https://git.sly.so/kade/getrandom?rev=63b0d4f8cf55661610824d464786480d6dc0920b#63b0d4f8cf55661610824d464786480d6dc0920b"
 dependencies = [
  "js-sys",
  "libc",
