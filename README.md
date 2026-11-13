@@ -1,18 +1,18 @@
 # dedup
 
-Text repetition detection and deduplication engine for streaming LLM output, written in Rust with first-class WebAssembly support.
+Text repetition detection and deduplication for streaming LLM output, written in Rust with WebAssembly support.
 
 The crate answers three questions about a piece of text:
 
-1. **Is it repetitive?** — near-exact duplicates via n-gram comparison, semantic repetition via sentence-level similarity
-2. **How repetitive?** — a normalized repetition ratio and byte ranges of every repeated section
-3. **What should the caller do about it?** — a streaming state machine that classifies live output into `none` / `steer` / `abort`
+1. **Is it repetitive?** Near-exact duplicates via n-gram/Rabin-Karp comparison, plus sentence-level lexical overlap (token Jaccard) as softer corroborating evidence.
+2. **How repetitive?** A repetition ratio and byte ranges for repeated sections.
+3. **What should the caller do about it?** A streaming monitor that classifies live output into `none`, `steer`, or `abort`.
 
-It is designed to be embedded in inference harnesses and agent runtimes: batch functions for post-hoc analysis of complete messages, and an incremental `StreamingState` monitor that consumes chunks as they arrive during generation.
+It is designed to be embedded in inference harnesses and agent runtimes: batch functions for post-hoc analysis of complete messages, and a `StreamingState` monitor that consumes chunks as they arrive during generation.
 
 ## Overview
 
-dedup processes text through two independent detection passes whose findings feed a shared action policy:
+`dedup-wasm` processes text through two detection passes whose findings feed a shared action policy:
 
 ```mermaid
 flowchart TD
@@ -22,37 +22,37 @@ flowchart TD
     end
 
     STREAM --> G{"Gates"}
-    G -- "warmup / length / delta" --> PASS["Skip analysis<br/>repeated: false"]
-    G -- pass --> ACC["Accumulate content +<br/>update n-gram hashes incrementally"]
+    G -- "warmup / length / empty / byte-delta" --> PASS["Skip analysis<br/>repeated: false"]
+    G -- pass --> ACC["Accumulate content<br/>and run detection on current buffer"]
     ACC --> NGRAM
     BATCH --> NGRAM
 
     subgraph passes["Detection passes"]
-        NGRAM["N-gram pass<br/>Rabin-Karp rolling hash + Jaccard<br/>strict: threshold 0.95"]
-        SENT["Sentence pass<br/>Jaccard + proximity gating<br/>loose: threshold 0.75, requires corroboration"]
+        NGRAM["N-gram pass<br/>Rabin-Karp rolling hash + Jaccard/char fallback<br/>strict: threshold 0.95"]
+        SENT["Sentence pass<br/>lexical token Jaccard + proximity/corroboration<br/>loose: threshold 0.75"]
     end
 
     NGRAM --> SEC["RepeatedSection[]<br/>source: ngram | sentence"]
     SENT --> SEC
 
     SEC --> POLICY{"Action policy"}
-    POLICY -- "sentence-level only" --> STEER["Steer<br/>inject corrective signal,<br/>never aborts"]
-    POLICY -- "n-gram match,<br/>count < max_repetitions" --> STEER
-    POLICY -- "n-gram match,<br/>count >= max_repetitions<br/>or 2+ confirms > 0.9" --> ABORT["Abort<br/>terminate degenerate loop"]
+    POLICY -- "sentence-level only" --> STEER["Steer<br/>corrective signal, never abort"]
+    POLICY -- "n-gram evidence,<br/>below abort condition" --> STEER
+    POLICY -- "n-gram evidence and<br/>count >= max_repetitions<br/>or 2 strong n-gram confirms" --> ABORT["Abort<br/>terminate degenerate loop"]
 ```
 
-The key asymmetry: only near-exact (n-gram) repetition accumulates toward abort. Sentence-level semantic similarity can steer, but reworded-but-different content never kills a stream.
+**Important distinction:** only near-exact n-gram evidence is treated as abort-worthy. Sentence-level matches are lexical overlap signals (not semantic understanding) and are used to steer, not to kill a stream.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for full details on each layer, data flow diagrams, and module dependency graphs.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) and [INTEGRATION.md](./INTEGRATION.md) for implementation and embedding details. When docs and code disagree, the implementation and tests in this repository are the source of truth.
 
 ## Features
 
-- **N-gram pass** — sliding-window n-grams hashed with Rabin-Karp rolling hashes, compared pairwise with Jaccard similarity plus character-level fallback for catches word-level comparison misses
-- **Sentence pass** — sentence segmentation with proximity gating (`context_gap_max`) so legitimate contextual variation is not flagged; requires corroborating evidence (multiple similar pairs or one very strong pair confirmed by the n-gram pass)
-- **Streaming monitor** — incremental `feed_chunk()` state machine with warmup, content-length, and chunk-delta gating; no polling timers required from the host
-- **Action policy** — only near-exact (n-gram) repetitions accumulate toward abort; softer sentence-level matches steer but never kill a stream
-- **Presets** — `default`, `relaxed`, `sensitive` with documented parameter overrides
-- **Dual target** — native (`rlib`) for Rust hosts, `cdylib`/`wasm32-unknown-unknown` for JavaScript hosts via wasm-bindgen
+- N-gram pass for near-exact repetition: sliding-window n-grams hashed with Rabin-Karp rolling hashes, compared with Jaccard similarity and a character-level fallback for cases word-level comparison misses.
+- Sentence pass for lexical overlap: sentence segmentation with proximity gating (`context_gap_max`) and corroboration requirements to reduce false positives from incidental similarity.
+- Streaming monitor: `StreamingState::feed_chunk()` accumulates chunks and performs gated checks over the current buffer (warmup, minimum content length, empty-chunk and byte-delta gates). It is designed for low overhead in normal generation, but it is not a fully incremental rolling index.
+- Action policy: `none`, `steer`, `abort`. N-gram evidence drives abort decisions; sentence-only evidence is steer-only.
+- Presets: `default`, `relaxed`, `sensitive` with defined threshold, length, repetition overrides.
+- Dual target: native Rust library (`rlib`) and WebAssembly (`cdylib` for `wasm32-unknown-unknown`) via wasm-bindgen.
 
 ## Quick start (Rust)
 
@@ -63,8 +63,10 @@ let settings = DedupSettings::default();
 let result = check_repetition("some assistant output ...", &settings);
 if result.repeated {
     for section in &result.sections {
-        println!("repeat at {}..{} (similarity {:.2}, source {:?})",
-            section.repeat_start, section.repeat_end, section.similarity, section.source);
+        println!(
+            "repeat at {}..{} (similarity {:.2}, source {:?})",
+            section.repeat_start, section.repeat_end, section.similarity, section.source
+        );
     }
 }
 ```
@@ -79,15 +81,14 @@ let mut monitor = StreamingState::new(DedupSettings::default());
 for chunk in assistant_stream {
     let check = monitor.feed_chunk(chunk);
     if check.repeated {
-        // n-gram sections accumulate toward abort;
-        // sentence-level matches steer only.
+        // inspect check.sections / check.source as needed
     }
-}
 
-match monitor.determine_action(&last_check) {
-    StreamAction::Abort => { /* terminate: degenerate loop */ }
-    StreamAction::Steer => { /* inject corrective message */ }
-    StreamAction::None  => {}
+    match monitor.determine_action(&check) {
+        StreamAction::Abort => { /* terminate: degenerate loop */ }
+        StreamAction::Steer => { /* inject corrective signal */ }
+        StreamAction::None  => {}
+    }
 }
 ```
 
@@ -99,15 +100,17 @@ use dedup_wasm::{resolve_dedup_preset, DedupPresetName};
 let settings = resolve_dedup_preset(DedupPresetName::Relaxed);
 ```
 
-| Preset | N-Gram Threshold | Sentence Threshold | Window Size | Step Size | Min Repeat Length | Max Repetitions |
-|--------|------------------|-------------------|-------------|-----------|-------------------|-----------------|
-| default | 0.95 | 0.75 | 100 | 25 | 50 | 3 |
-| relaxed | 0.92 | 0.75 | 100 | 15 | 80 | 3 |
-| sensitive | 0.75 | 0.75 | 100 | 3 | 30 | 3 |
+| Preset | `ngram_similarity_threshold` | `sentence_similarity_threshold` | `min_repeat_length` | `max_repetitions` | Notes |
+|---|---:|---:|---:|---:|---|
+| `default` | 0.95 | 0.75 | 50 | 3 | Baseline settings |
+| `relaxed` | 0.92 | 0.75 | 80 | 3 | Less sensitive n-gram threshold, longer minimum repeat |
+| `sensitive` | 0.75 | 0.75 | 30 | 3 | More sensitive n-gram threshold, shorter minimum repeat |
+
+Note: preset/settings fields such as `window_size` and `step_size` are part of the public settings shape, but their effective influence depends on the current implementation. Treat the code and tests as authoritative. A rewrite plan to make knob behavior and docs consistent is tracked separately.
 
 ## JavaScript / WASM usage
 
-The crate compiles to WebAssembly and is consumed from Node.js through a thin FFI bridge with no generated-glue runtime dependency. A maintained bridge package lives at [`packages/dedup-wasm`](https://git.sly.so/kade/r/src/branch/main/packages/dedup-wasm) in the [r](https://git.sly.so/kade/r) monorepo:
+The crate compiles to WebAssembly and can be consumed from JavaScript hosts via wasm-bindgen bindings. A maintained bridge package lives at [`packages/dedup-wasm`](https://git.sly.so/kade/r/src/branch/main/packages/dedup-wasm) in the [r](https://git.sly.so/kade/r) monorepo:
 
 ```ts
 import { initDedupWasm, createStreamingDedup, tokenize } from "@entropy-tamer/r-dedup-wasm";
@@ -116,38 +119,35 @@ await initDedupWasm();
 const tokens = JSON.parse(tokenize("hello world hello"));
 ```
 
-See [INTEGRATION.md](./INTEGRATION.md) for the full embedding guide, including the r integration and porting instructions for other harnesses.
+See [INTEGRATION.md](./INTEGRATION.md) for embedding guidance and the `r` integration.
 
 ## Build
 
 ```bash
-# Native build + test suite
+# Native checks
 cargo test --release
+cargo fmt --all -- --check
+cargo clippy --all-targets --release -- -D warnings
 
 # WebAssembly target
 rustup target add wasm32-unknown-unknown
 cargo build --target wasm32-unknown-unknown --release
+cargo check --target wasm32-unknown-unknown --release
 
-# Generate bindings for a JS host
+# Optional: generate JS bindings for a host
 wasm-bindgen target/wasm32-unknown-unknown/release/dedup_wasm.wasm \
   --out-dir pkg --target nodejs
 ```
 
-Note: dependencies are pinned to forks on `git.sly.so` (serde, serde_json, wasm-bindgen, ahash, regex, once_cell). The `getrandom` wasm32 dependency requires the `wasm_js` feature; see [ARCHITECTURE.md](./ARCHITECTURE.md#wasm-portability-notes) for details.
+Dependencies are pinned to forks on `git.sly.so` (including serde/serde_json, wasm-bindgen, ahash, regex, once_cell). The `getrandom` wasm32 build uses the `wasm_js` feature as configured in [Cargo.toml](./Cargo.toml).
 
-## Performance characteristics
+## Behavior notes and caveats
 
-| Operation | Complexity | Typical latency (10 KB text) |
-|-----------|------------|------------------------------|
-| N-gram comparison | O(n² / step_size) per pass | < 5 ms native |
-| Streaming `feed_chunk()` | Gated re-analysis, not algorithmically incremental | ~2 ms per chunk at streaming rate |
-| N-gram worst case (long repetitive stream) | O(n² / step_size) on accumulated length | Spikes on pathological inputs — gating keeps steady-state near zero |
-
-Gating keeps steady-state cost near zero during normal generation:
-
-- **Warmup gate** — checks suppressed during initial content accumulation (native builds)
-- **Content-length gate** — no analysis until accumulated text reaches `min_repeat_length * 8`
-- **Chunk-delta gate** — skips re-analysis when a chunk adds no new characters
+- Lexical, not semantic: sentence-level similarity is token/lexical overlap (Jaccard-based), not meaning-aware semantic matching.
+- Streaming checks are gated: warmup (native), minimum content length, empty-chunk and byte-delta gates reduce scan frequency. When a scan runs, detection operates on the accumulated buffer.
+- Offsets are byte offsets: repeated section ranges are Rust byte offsets into UTF-8 text. Consumers must interpret them accordingly.
+- WASM portability: `std::time::Instant`-based warmup behavior differs on `wasm32-unknown-unknown` (compiled out there); bridge/runtime behavior should account for this.
+- Docs lag code in places: [ARCHITECTURE.md](./ARCHITECTURE.md) may not match all implementation details. A characterization-first rewrite plan (ABI-frozen, wave-based) is tracked in project todos to align behavior, knob semantics, segmentation, documentation.
 
 ## Test coverage
 
@@ -155,27 +155,24 @@ Gating keeps steady-state cost near zero during normal generation:
 cargo test --release
 ```
 
-Two test targets cover the crate:
-
-- `lib` unit tests — in-turn checking, deduplication, presets, WASM binding exports
-- `dedup_tests` — integration tests over the batch and streaming APIs, including scenario regressions
+Current test targets:
+- `src/lib.rs` unit tests
+- `test/dedup_tests.rs` integration tests (batch and streaming behavior, including regression scenarios)
 
 ## Repository layout
 
-```
+```text
 src/
-  lib.rs           Crate root, public API surface, WASM exports
-  deduplicate.rs   Two-pass detection + StreamingState monitor
-  ngram.rs         Rabin-Karp rolling-hash n-gram extraction
+  lib.rs           Public API surface and WASM exports
+  deduplicate.rs   Detection passes, streaming monitor, action policy
+  ngram.rs         Rabin-Karp rolling-hash n-gram extraction/matching
   similarity.rs    Jaccard token similarity + character n-gram fallback
   sentence.rs      Sentence segmentation + sentence-pass analysis
-  tokenize.rs      Tokenization shared by all passes
+  tokenize.rs      Tokenization shared by passes
   presets.rs       Named preset resolution
 test/
   dedup_tests.rs   Integration tests
 ```
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for layer diagrams, data flow, gating behavior, action policy, and WASM portability notes.
 
 ## License
 
