@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ahash"
 version = "0.8.10"
-source = "git+https://git.sly.so/kade/ahash?rev=e09d24e369c951dfe87c52b203b12bae7d500587#e09d24e369c951dfe87c52b203b12bae7d500587"
+source = "git+https://git.sly.so/kade/ahash?rev=155f8e1d9c5a8edb8ee714be066826175fc457f0#155f8e1d9c5a8edb8ee714be066826175fc457f0"
 dependencies = [
  "getrandom",
  "once_cell",
@@ -90,7 +90,7 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.4.2"
-source = "git+https://git.sly.so/kade/getrandom?rev=7a84146786fd0121ade1dd136b1c04bb4f6d2b36#7a84146786fd0121ade1dd136b1c04bb4f6d2b36"
+source = "git+https://git.sly.so/kade/getrandom?rev=d67801e8e7bc700937cc9ecf59cd19aa65c64c67#d67801e8e7bc700937cc9ecf59cd19aa65c64c67"
 dependencies = [
  "js-sys",
  "libc",
@@ -106,7 +106,7 @@ source = "git+https://git.sly.so/kade/itoa#29057f99a7526011512c4d4616d73d49c92be
 [[package]]
 name = "js-sys"
 version = "0.3.107"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "futures-util",
  "wasm-bindgen",
@@ -116,12 +116,6 @@ dependencies = [
 name = "libc"
 version = "0.2.190"
 source = "git+https://git.sly.so/kade/libc#11983883e507d8381ef182228b457ab042119b25"
-
-[[package]]
-name = "libm"
-version = "0.2.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libm"
@@ -157,7 +151,7 @@ version = "0.2.19"
 source = "git+https://git.sly.so/kade/num-traits#276c30ae67c75ce7fd7c8c9bc4963929e41a502b"
 dependencies = [
  "autocfg",
- "libm 0.2.16 (git+https://git.sly.so/kade/compiler-builtins)",
+ "libm",
 ]
 
 [[package]]
@@ -328,7 +322,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "rustversion",
  "wasm-bindgen-macro",
@@ -338,7 +332,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-futures"
 version = "0.4.80"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "js-sys",
  "tokio",
@@ -348,7 +342,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-macro"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -357,7 +351,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-macro-support"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -369,7 +363,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-shared"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "unicode-ident",
 ]
@@ -377,11 +371,11 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-test"
 version = "0.3.80"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "cast",
  "js-sys",
- "libm 0.2.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libm",
  "minicov",
  "nu-ansi-term",
  "num-traits",
@@ -397,7 +391,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-test-macro"
 version = "0.3.80"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -407,7 +401,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-test-shared"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=c7a9219eaa5e5e344c668f6a952259520c2236dd#c7a9219eaa5e5e344c668f6a952259520c2236dd"
+source = "git+https://git.sly.so/kade/wasm-bindgen?rev=88949292ea6550cea65a856e57458f3a47274743#88949292ea6550cea65a856e57458f3a47274743"
 
 [[package]]
 name = "winapi-util"
