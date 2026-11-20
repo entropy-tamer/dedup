@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ahash"
 version = "0.8.10"
-source = "git+https://git.sly.so/kade/ahash?rev=76030a0313e8b5219cfa26b76e5137fc18da7036#76030a0313e8b5219cfa26b76e5137fc18da7036"
+source = "git+https://git.sly.so/kade/ahash#f8f0438ef77bc3934f021c8c9b7943d98751df7b"
 dependencies = [
  "getrandom",
  "once_cell",
@@ -16,7 +16,7 @@ dependencies = [
 [[package]]
 name = "aho-corasick"
 version = "1.1.4"
-source = "git+https://git.sly.so/kade/aho-corasick#c20d57907e9a8ce3296c1f079f892ce10dbc6861"
+source = "git+https://git.sly.so/kade/aho-corasick#461b392bb9e9315b943de881335c3b33e863c0b3"
 dependencies = [
  "memchr",
 ]
@@ -24,7 +24,7 @@ dependencies = [
 [[package]]
 name = "autocfg"
 version = "1.5.1"
-source = "git+https://git.sly.so/kade/autocfg#2c2fcf66fb43e09dc18b5b405b72fad51080eb18"
+source = "git+https://git.sly.so/kade/autocfg#ebc0192e61019c178acb1b082d031bd5ae1dc5c3"
 
 [[package]]
 name = "bumpalo"
@@ -34,13 +34,13 @@ source = "git+https://git.sly.so/kade/bumpalo#af433addec73507a5cdc1b1ebff689b6b9
 [[package]]
 name = "cast"
 version = "0.3.0"
-source = "git+https://git.sly.so/kade/cast#4a4e02bd40ad05a6b20c2680f5e9a1fe12a04d06"
+source = "git+https://git.sly.so/kade/cast#886c0b5ddd581871d92c6f9b80123d0f924c59a2"
 
 [[package]]
 name = "cc"
-version = "1.4.2"
+version = "1.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d262e149917187838d5b42777c8253bcb64500067342904e7d429499a6f277e"
+checksum = "33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -62,24 +62,24 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.10"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26b73573e6edcd2af0cdf47bd6cb58f0b3839491263c314eaad1ccf24430e1de"
+checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "futures-core"
 version = "1.0.0-alpha.0"
-source = "git+https://git.sly.so/kade/futures-rs#46b7eceb67137c470ff10bc79cd917d07d249b7f"
+source = "git+https://git.sly.so/kade/futures-rs#5e326d53cccb7c8f1ea826aad89e32b11451dc03"
 
 [[package]]
 name = "futures-task"
 version = "0.4.0-alpha.0"
-source = "git+https://git.sly.so/kade/futures-rs#46b7eceb67137c470ff10bc79cd917d07d249b7f"
+source = "git+https://git.sly.so/kade/futures-rs#5e326d53cccb7c8f1ea826aad89e32b11451dc03"
 
 [[package]]
 name = "futures-util"
 version = "0.4.0-alpha.0"
-source = "git+https://git.sly.so/kade/futures-rs#46b7eceb67137c470ff10bc79cd917d07d249b7f"
+source = "git+https://git.sly.so/kade/futures-rs#5e326d53cccb7c8f1ea826aad89e32b11451dc03"
 dependencies = [
  "futures-core",
  "futures-task",
@@ -90,7 +90,7 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.4.3"
-source = "git+https://git.sly.so/kade/getrandom?rev=63b0d4f8cf55661610824d464786480d6dc0920b#63b0d4f8cf55661610824d464786480d6dc0920b"
+source = "git+https://git.sly.so/kade/getrandom#b421f6930c5628a82487e92eca33b2f06083fbf6"
 dependencies = [
  "js-sys",
  "libc",
@@ -101,12 +101,12 @@ dependencies = [
 [[package]]
 name = "itoa"
 version = "1.0.18"
-source = "git+https://git.sly.so/kade/itoa#29057f99a7526011512c4d4616d73d49c92bed26"
+source = "git+https://git.sly.so/kade/itoa#112643d381ce3e125ac86363f2d65361b4b6c1f6"
 
 [[package]]
 name = "js-sys"
 version = "0.3.107"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "futures-util",
  "wasm-bindgen",
@@ -115,7 +115,7 @@ dependencies = [
 [[package]]
 name = "libc"
 version = "0.2.190"
-source = "git+https://git.sly.so/kade/libc#11983883e507d8381ef182228b457ab042119b25"
+source = "git+https://git.sly.so/kade/libc#514fc4db6e10fd2b54d2d92c7a77800f75e92243"
 
 [[package]]
 name = "libm"
@@ -140,15 +140,15 @@ dependencies = [
 [[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
-source = "git+https://git.sly.so/kade/nu-ansi-term#8d21917bc7d21395a4449df00421f75025b2002b"
+source = "git+https://git.sly.so/kade/nu-ansi-term#c1ff23f4581477986d51ced9cbe5f5f66aeb842d"
 dependencies = [
- "windows-sys",
+ "windows-sys 0.100.0",
 ]
 
 [[package]]
 name = "num-traits"
 version = "0.2.19"
-source = "git+https://git.sly.so/kade/num-traits#276c30ae67c75ce7fd7c8c9bc4963929e41a502b"
+source = "git+https://git.sly.so/kade/num-traits#29fee9da8199697854a3120d6d6b76f693bf70ef"
 dependencies = [
  "autocfg",
  "libm",
@@ -157,7 +157,7 @@ dependencies = [
 [[package]]
 name = "once_cell"
 version = "1.21.4"
-source = "git+https://git.sly.so/kade/once_cell#e413a278d070a3903338ebdd4bd33dfd210d4fc1"
+source = "git+https://git.sly.so/kade/once_cell#47d155c1e0245d6c499e08588347d8c015f87758"
 
 [[package]]
 name = "oorandom"
@@ -167,12 +167,12 @@ source = "git+https://git.sly.so/kade/oorandom#5b7a3b32ebeb312da32ff2a2d8bcb0c90
 [[package]]
 name = "pin-project-lite"
 version = "0.2.17"
-source = "git+https://git.sly.so/kade/pin-project-lite#cef6702d405b050725afffc8fd304d5176e2627b"
+source = "git+https://git.sly.so/kade/pin-project-lite#5edc3382143ae640c235f321f9828d3ba0a8da26"
 
 [[package]]
 name = "proc-macro2"
 version = "1.0.107"
-source = "git+https://git.sly.so/kade/proc-macro2#f72f78359d5291aafce2d2a77be7541bf3803a3d"
+source = "git+https://git.sly.so/kade/proc-macro2#9710103d2ddc66b710e5b0cb9419481d4a453472"
 dependencies = [
  "unicode-ident",
 ]
@@ -180,7 +180,7 @@ dependencies = [
 [[package]]
 name = "quote"
 version = "1.0.47"
-source = "git+https://git.sly.so/kade/quote#ec3c31c9870fcbcfabd33038e70e65eef4515e3c"
+source = "git+https://git.sly.so/kade/quote#38a691e5e3f3298c15228861b446b95bb3d81893"
 dependencies = [
  "proc-macro2",
 ]
@@ -193,7 +193,7 @@ source = "git+https://git.sly.so/kade/r-efi#4fdaa546571c3fa90a66edd3e0b924f14542
 [[package]]
 name = "regex"
 version = "1.13.1"
-source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
+source = "git+https://git.sly.so/kade/regex#7355ef75ed5a0f980e2ac5345166d158729835d1"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -204,7 +204,7 @@ dependencies = [
 [[package]]
 name = "regex-automata"
 version = "0.4.18"
-source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
+source = "git+https://git.sly.so/kade/regex#7355ef75ed5a0f980e2ac5345166d158729835d1"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -214,13 +214,12 @@ dependencies = [
 [[package]]
 name = "regex-syntax"
 version = "0.8.11"
-source = "git+https://git.sly.so/kade/regex#7db73013b8f3df59b87cb66558fc2f1ca6d593d9"
+source = "git+https://git.sly.so/kade/regex#7355ef75ed5a0f980e2ac5345166d158729835d1"
 
 [[package]]
 name = "rustversion"
-version = "1.0.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+version = "1.0.22"
+source = "git+https://git.sly.so/kade/rustversion#6aa05377982c8ad56d0c05c0a039abf63c9d0361"
 
 [[package]]
 name = "same-file"
@@ -261,7 +260,7 @@ dependencies = [
 [[package]]
 name = "serde_json"
 version = "1.0.151"
-source = "git+https://git.sly.so/kade/serde_json#aa3c2272975d9aa530257412dc694901dba66deb"
+source = "git+https://git.sly.so/kade/serde_json#5ab8723478ea5d9a2dee12fc09fbdd2da8317e43"
 dependencies = [
  "itoa",
  "memchr",
@@ -283,8 +282,8 @@ source = "git+https://git.sly.so/kade/slab#66b110d47ade8dd0e599a91fe521aad671370
 
 [[package]]
 name = "syn"
-version = "3.0.9"
-source = "git+https://git.sly.so/kade/syn#fb24ad8257f6bb239c8d1526f07c19836845b36c"
+version = "3.0.10"
+source = "git+https://git.sly.so/kade/syn#b79b32b4ad42f90d3320ef1f5f8876420ef320ef"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -294,7 +293,7 @@ dependencies = [
 [[package]]
 name = "tokio"
 version = "1.52.2"
-source = "git+https://git.sly.so/kade/tokio#e0fc6f10d39c07fca71c011e79330a69609dec8c"
+source = "git+https://git.sly.so/kade/tokio#5d3035d960f5c75b611e07ece59ede54316f9c90"
 dependencies = [
  "pin-project-lite",
 ]
@@ -302,12 +301,12 @@ dependencies = [
 [[package]]
 name = "unicode-ident"
 version = "1.0.26"
-source = "git+https://git.sly.so/kade/unicode-ident#bfa27204892de77bc9629e13ea5c94ce92226b5a"
+source = "git+https://git.sly.so/kade/unicode-ident#33e2f0a0b9d371d5e4f89f679d1553b2e7ac53ba"
 
 [[package]]
 name = "version_check"
 version = "0.9.5"
-source = "git+https://git.sly.so/kade/version_check#1e353c16f7e728cff615c19129964fa9c02a0003"
+source = "git+https://git.sly.so/kade/version_check#afc73536736c491dc024fa11127a3999d63ece24"
 
 [[package]]
 name = "walkdir"
@@ -322,7 +321,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "rustversion",
  "wasm-bindgen-macro",
@@ -332,7 +331,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-futures"
 version = "0.4.80"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "js-sys",
  "tokio",
@@ -342,7 +341,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-macro"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -351,7 +350,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-macro-support"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -363,7 +362,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-shared"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "unicode-ident",
 ]
@@ -371,7 +370,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-test"
 version = "0.3.80"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "cast",
  "js-sys",
@@ -391,7 +390,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-test-macro"
 version = "0.3.80"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -401,7 +400,7 @@ dependencies = [
 [[package]]
 name = "wasm-bindgen-test-shared"
 version = "0.2.130"
-source = "git+https://git.sly.so/kade/wasm-bindgen?rev=6c97dd7fce4ba804558cb366ce216064d9dc5d69#6c97dd7fce4ba804558cb366ce216064d9dc5d69"
+source = "git+https://git.sly.so/kade/wasm-bindgen#98abb5f74c25ac4aa1016494a728ed843a48c90e"
 
 [[package]]
 name = "winapi-util"
@@ -409,7 +408,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -419,18 +418,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
+name = "windows-link"
+version = "0.100.0"
+source = "git+https://git.sly.so/kade/windows-rs#8ac4b7c4891379f7c40a95d011a81b973226be89"
+
+[[package]]
 name = "windows-sys"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
- "windows-link",
+ "windows-link 0.2.1",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.100.0"
+source = "git+https://git.sly.so/kade/windows-rs#8ac4b7c4891379f7c40a95d011a81b973226be89"
+dependencies = [
+ "windows-link 0.100.0",
 ]
 
 [[package]]
 name = "zerocopy"
 version = "0.8.47"
-source = "git+https://git.sly.so/kade/zerocopy#aca7f04b2b38a96be46dfb89ccebfe6f1bf70c1a"
+source = "git+https://git.sly.so/kade/zerocopy#4ac7177e5f45c94c45f29e2b8aed2000603594bb"
 dependencies = [
  "zerocopy-derive",
 ]
@@ -438,7 +450,7 @@ dependencies = [
 [[package]]
 name = "zerocopy-derive"
 version = "0.8.47"
-source = "git+https://git.sly.so/kade/zerocopy#aca7f04b2b38a96be46dfb89ccebfe6f1bf70c1a"
+source = "git+https://git.sly.so/kade/zerocopy#4ac7177e5f45c94c45f29e2b8aed2000603594bb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -448,4 +460,4 @@ dependencies = [
 [[package]]
 name = "zmij"
 version = "1.0.21"
-source = "git+https://git.sly.so/kade/zmij#4e38f4bb8c25cbba1675504c5c442f33cb777083"
+source = "git+https://git.sly.so/kade/zmij#0aadaa5233c9c74d166b928204529b903333a6ae"

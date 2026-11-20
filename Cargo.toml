@@ -23,7 +23,7 @@ regex = {git = "https://git.sly.so/kade/regex", package = "regex"}
 once_cell = {git = "https://git.sly.so/kade/once_cell", package = "once_cell"}
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { git = "https://git.sly.so/kade/getrandom", rev = "63b0d4f8cf55661610824d464786480d6dc0920b", features = ["wasm_js"] }
+getrandom = { git = "https://git.sly.so/kade/getrandom", features = ["wasm_js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = { git = "https://git.sly.so/kade/wasm-bindgen", package = "wasm-bindgen-test" }
