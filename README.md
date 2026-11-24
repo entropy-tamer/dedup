@@ -4,9 +4,9 @@ Text repetition detection and deduplication for streaming LLM output, written in
 
 The crate answers three questions about a piece of text:
 
-1. **Is it repetitive?** Near-exact duplicates via n-gram/Rabin-Karp comparison, plus sentence-level lexical overlap (token Jaccard) as softer corroborating evidence.
-2. **How repetitive?** A repetition ratio and byte ranges for repeated sections.
-3. **What should the caller do about it?** A streaming monitor that classifies live output into `none`, `steer`, or `abort`.
+1. Is it repetitive? Near-exact duplicates via n-gram/Rabin-Karp comparison, plus sentence-level lexical overlap (token Jaccard) as softer corroborating evidence.
+2. How repetitive? A repetition ratio and byte ranges for repeated sections.
+3. What should the caller do about it? A streaming monitor that classifies live output into `none`, `steer`, or `abort`.
 
 It is designed to be embedded in inference harnesses and agent runtimes: batch functions for post-hoc analysis of complete messages, and a `StreamingState` monitor that consumes chunks as they arrive during generation.
 
